@@ -4,3 +4,4 @@ dependencies:
   espressif/esp_lvgl_port: "^2.6"
   espressif/cjson: "*"
   espressif/button: "^4.1"
+  espressif/mdns: "^1.8"

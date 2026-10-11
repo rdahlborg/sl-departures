@@ -47,6 +47,16 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 2.9.0
+  espressif/mdns:
+    component_hash: b5b30022c46302eab89c1d2e3b6fb5918a627563a7462f0ee284b22b9a934967
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.14.0
   idf:
     source:
       type: idf
@@ -86,8 +96,9 @@ direct_dependencies:
 - espressif/button
 - espressif/cjson
 - espressif/esp_lvgl_port
+- espressif/mdns
 - idf
 - lvgl/lvgl
-manifest_hash: 94ad7745a47fc260f5c7c190ad97cfb206112cf163f3607824bfee145c211ef2
+manifest_hash: c8f8b0fdf5df3b0925db51b63146bef1e9bc04b7d977d360b88bcd35aea021ec
 target: esp32c6
 version: 3.0.0

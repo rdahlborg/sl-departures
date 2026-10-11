@@ -33,7 +33,10 @@ The line list ends with two extra entries: **Mobil…** and **Wi-Fi…**.
 ![QR code for the settings page](screenshots/phone-settings.png)
 
 Pick **Mobil…** in the line list. The board shows a QR code for its settings
-page, `http://<board address>/`. Scan it with a phone on the same Wi-Fi and
+page, `http://<board address>/`, which is also reachable as
+`http://sl-departures-xxxx.local/` (the suffix matches the setup hotspot's
+name). In the web installer, connecting to a board that has Wi-Fi offers
+**Visit device**, which opens the same page. Scan it with a phone on the same Wi-Fi and
 choose the line and station. The board switches at once and closes the code.
 Anyone on your network can open this page and change the station, but not
 the Wi-Fi.

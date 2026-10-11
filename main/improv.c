@@ -80,18 +80,26 @@ static void send_result(uint8_t cmd, const char *const *strs, int n)
 }
 
 /* The settings page on the home network. ESP Web Tools shows it as a
- * "Visit device" button, where line and station are chosen. */
+ * "Visit device" button, where line and station are chosen. Until the IP
+ * address is known (just after the installer resets the board) the mDNS
+ * name is used instead. */
 static void send_url_result(uint8_t cmd)
 {
-    char url[32];
-    snprintf(url, sizeof(url), "http://%s/", board_wifi_ip());
+    char url[48];
+    if (board_wifi_ip()[0]) {
+        snprintf(url, sizeof(url), "http://%s/", board_wifi_ip());
+    } else {
+        snprintf(url, sizeof(url), "http://%s.local/", board_hostname());
+    }
     const char *urls[] = { url };
-    send_result(cmd, urls, board_wifi_ip()[0] ? 1 : 0);
+    send_result(cmd, urls, 1);
 }
 
 static void send_state(void)
 {
-    if (board_wifi_connected()) {
+    /* The installer resets the board when it connects and asks right away,
+     * before Wi-Fi is back up, so saved credentials count as provisioned. */
+    if (board_wifi_connected() || board_wifi_configured()) {
         send_byte(TYPE_STATE, STATE_PROVISIONED);
         send_url_result(CMD_CURRENT_STATE);
     } else {

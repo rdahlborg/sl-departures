@@ -16,6 +16,8 @@
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_log.h"
+#include "esp_mac.h"
+#include "mdns.h"
 #include "nvs_flash.h"
 #include "board.h"
 
@@ -44,6 +46,7 @@ static volatile bool wifi_paused;
 static volatile bool wifi_hold;
 static volatile int fail_count;
 static char wifi_ip[16];
+static char hostname[24];
 static EventGroupHandle_t wifi_events;
 
 lv_display_t *board_display_init(void)
@@ -164,8 +167,19 @@ void board_wifi_init(void)
     ESP_ERROR_CHECK(err);
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *sta = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
+
+    /* Same suffix as the setup hotspot's name. */
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+    snprintf(hostname, sizeof(hostname), "sl-departures-%02x%02x", mac[4], mac[5]);
+    esp_netif_set_hostname(sta, hostname);
+    if (mdns_init() == ESP_OK) {
+        mdns_hostname_set(hostname);
+        mdns_instance_name_set("SL Departures");
+        mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    }
 
     wifi_events = xEventGroupCreate();
     wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -198,6 +212,11 @@ void board_wifi_init(void)
 bool board_wifi_connected(void)
 {
     return wifi_connected;
+}
+
+const char *board_hostname(void)
+{
+    return hostname;
 }
 
 const char *board_wifi_ip(void)
