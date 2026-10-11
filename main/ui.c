@@ -264,7 +264,10 @@ static void format_mins(char *buf, size_t len, const sl_train_t *tr, time_t now)
         snprintf(buf, len, "Inst.");
         return;
     }
-    int m = (int)((difftime(tr->t[0], now) + 30) / 60);
+    /* Whole minutes, rounded down like SL's platform signs: under a
+     * minute is "Nu", 97 s is "1 min". */
+    double rem = difftime(tr->t[0], now);
+    int m = rem < 60 ? 0 : (int)(rem / 60);
     if (m <= 0) {
         snprintf(buf, len, "Nu");
     } else if (m < 60) {
