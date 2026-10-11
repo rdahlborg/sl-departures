@@ -5,9 +5,10 @@
  *   station picker   click: next station   double: previous   hold: choose
  *   Wi-Fi setup      hold: cancel
  *   phone QR code    any press: close
+ *   about screen     click: close          hold: check for updates
  *
  * The line picker ends with "Mobil…", which shows a QR code for the
- * settings page, and "Wi-Fi…", which starts phone setup.
+ * settings page, "Wi-Fi…", which starts phone setup, and "Om / Uppdatera…".
  *
  * The picker closes without changes after PICKER_TIMEOUT_MS of inactivity.
  */
@@ -21,6 +22,7 @@
 #include "sl_api.h"
 #include "ui.h"
 #include "wifi_setup.h"
+#include "ota.h"
 #include "controls.h"
 
 #define PIN_BOOT            9
@@ -31,7 +33,7 @@
 
 static const char *TAG = "controls";
 
-typedef enum { MODE_BOARD, MODE_PICK_LINE, MODE_PICK_STATION, MODE_PHONE } ui_mode_t;
+typedef enum { MODE_BOARD, MODE_PICK_LINE, MODE_PICK_STATION, MODE_PHONE, MODE_ABOUT } ui_mode_t;
 
 static ui_mode_t mode = MODE_BOARD;
 static int pick_group;
@@ -98,7 +100,8 @@ static void step_station(int delta)
 /* Entries after the line groups in the line picker. */
 #define PICK_PHONE  METRO_N_GROUPS
 #define PICK_WIFI   (METRO_N_GROUPS + 1)
-#define PICK_COUNT  (METRO_N_GROUPS + 2)
+#define PICK_ABOUT  (METRO_N_GROUPS + 2)
+#define PICK_COUNT  (METRO_N_GROUPS + 3)
 
 static void show_line_picker(void)
 {
@@ -107,7 +110,7 @@ static void show_line_picker(void)
         strlcat(options, metro_groups[i].name, sizeof(options));
         strlcat(options, "\n", sizeof(options));
     }
-    strlcat(options, "Mobil…\nWi-Fi…", sizeof(options));
+    strlcat(options, "Mobil…\nWi-Fi…\nOm / Uppdatera…", sizeof(options));
     ui_picker_show("Välj linje", options, pick_index,
                    metro_groups[pick_index < METRO_N_GROUPS ? pick_index : 0].color);
 }
@@ -163,9 +166,20 @@ static void handle(event_t ev)
         }
         break;
 
+    case MODE_ABOUT:
+        if (ev == EV_HOLD) {
+            ota_check_now();
+        } else if (ev != EV_TIMEOUT) {
+            ui_about_hide();
+            mode = MODE_BOARD;
+        }
+        break;
+
     case MODE_BOARD:
         if (ev == EV_NEXT || ev == EV_PREV) {
-            step_station(ev == EV_NEXT ? 1 : -1);
+            if (metro_ready()) {
+                step_station(ev == EV_NEXT ? 1 : -1);
+            }
         } else {
             sl_config_t c;
             sl_get_config(&c);
@@ -188,6 +202,13 @@ static void handle(event_t ev)
             ui_picker_hide();
             mode = MODE_PHONE;
             ui_phone_show();
+        } else if (mode == MODE_PICK_LINE && pick_index == PICK_ABOUT) {
+            esp_timer_stop(timeout_timer);
+            ui_picker_hide();
+            mode = MODE_ABOUT;
+            ui_about_show();
+        } else if (mode == MODE_PICK_LINE && pick_index < METRO_N_GROUPS && !metro_ready()) {
+            /* No stations yet: stay in the list. */
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_WIFI) {
             esp_timer_stop(timeout_timer);
             ui_picker_hide();

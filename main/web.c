@@ -132,6 +132,9 @@ static bool apply_station(const char *body)
     if (!form_value(body, "group", g, sizeof(g)) || !form_value(body, "site", s, sizeof(s))) {
         return false;
     }
+    if (!metro_ready()) {
+        return false;
+    }
     int group = atoi(g);
     uint16_t site = atoi(s);
     if (group < 0 || group >= METRO_N_GROUPS || !station_on_group(group, site)) {
@@ -145,6 +148,11 @@ static bool apply_station(const char *body)
 /* Line and station menus. The station list follows the chosen line. */
 static void send_station_picker(httpd_req_t *req)
 {
+    if (!metro_ready()) {
+        httpd_resp_sendstr_chunk(req, "<p>Stationslistan hämtas när tavlan är ansluten. "
+                                      "Du kan välja station sedan.</p>");
+        return;
+    }
     sl_config_t cfg;
     sl_get_config(&cfg);
     char buf[64];

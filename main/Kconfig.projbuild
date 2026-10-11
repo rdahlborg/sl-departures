@@ -20,6 +20,14 @@ menu "SL Departures Configuration"
     config INSTALLER_URL
         string "Web installer address shown when Wi-Fi is not set up"
         default "rdahlborg.github.io/sl-departures"
+    config OTA_GITHUB_REPO
+        string "GitHub repository for firmware updates"
+        default "rdahlborg/sl-departures"
+        help
+            Updates come from the latest release's sl-departures.bin asset.
+    config OTA_AUTO_UPDATE
+        bool "Install new releases automatically at night"
+        default y
     config DISPLAY_FLIP
         bool "Rotate the display 180 degrees"
         default n

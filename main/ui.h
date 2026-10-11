@@ -16,3 +16,8 @@ void ui_picker_hide(void);
 void ui_phone_show(void);
 void ui_phone_hide(void);
 bool ui_phone_visible(void);
+
+/* Version, address and update status. */
+void ui_about_show(void);
+void ui_about_hide(void);
+bool ui_about_visible(void);

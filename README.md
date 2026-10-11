@@ -15,6 +15,8 @@ Live Stockholm metro departures and train positions on a
 - Choose line and station with the BOOT button or from your phone. Your choice
   is remembered.
 - Set up Wi-Fi from the web installer or from your phone with a QR code.
+- Updates itself over Wi-Fi from the GitHub releases, with automatic rollback.
+- Fetches the station list from SL, so new stations show up by themselves.
 
 ## Getting started
 
@@ -29,7 +31,9 @@ Live Stockholm metro departures and train positions on a
    - **From your phone:** close the installer's Wi-Fi dialog. The board shows
      a QR code (see [Wi-Fi setup from a phone](#wi-fi-setup-from-a-phone)).
 
-The board starts on Brommaplan on the green line until you pick another station.
+On first start the board fetches the station list from SL, which takes about
+10 seconds once it is online. It starts on Brommaplan on the green line until
+you pick another station.
 
 ## Using the button
 
@@ -44,8 +48,9 @@ Everything is done with the **BOOT** button. RESET just restarts the board.
 | Wi-Fi setup | | | cancel |
 
 The line list has the three lines followed by **Mobil…** (choose the station
-from a phone) and **Wi-Fi…** (set up Wi-Fi from a phone). The lists close by
-themselves after 30 seconds without a press.
+from a phone), **Wi-Fi…** (set up Wi-Fi from a phone) and **Om / Uppdatera…**
+(version, address and updates). The lists close by themselves after 30
+seconds without a press.
 
 ## Choosing the station from a phone
 
@@ -81,6 +86,19 @@ and shows a QR code:
 If setup was opened from the menu and nobody joins, the hotspot closes after
 10 minutes.
 
+## Updates
+
+The board checks for a new release every night between 03:00 and 04:00 and
+installs it over Wi-Fi, keeping your Wi-Fi and station. To check right away,
+open **Om / Uppdatera…** in the line list and hold the button. The version is
+shown there and on the start screen.
+
+A new version must fetch departures within 10 minutes of starting, otherwise
+the board goes back to the previous version by itself.
+
+Boards installed before v1.1.0 need one update through the web installer to
+get the flash layout that updates over Wi-Fi use.
+
 ## Troubleshooting
 
 - **The installer's port list is empty, or *Visit device* says the site can't
@@ -93,6 +111,8 @@ If setup was opened from the menu and nobody joins, the hotspot closes after
   QR code on the screen, or open `http://192.168.4.1` in the phone's browser.
 - **The clock shows `--:--` or the dot next to it is orange or red:** red means
   no Wi-Fi, orange means the departure data is more than 90 seconds old.
+- **The start screen stays on "Hämtar…":** the board needs internet access
+  to fetch the station list the first time. It retries every 30 seconds.
 
 ## How trains are placed
 
@@ -106,6 +126,15 @@ between stations, place it along the track. The API needs no key; a poll every
 
 Where lines split, the map follows one branch. Trains from the other branch
 appear in the departure list and join the map where the branches meet.
+
+## Where the station list comes from
+
+The firmware only knows which lines exist and their end stations. On first
+start, it asks [SL's journey planner](https://www.trafiklab.se/api/other-apis/sl/journey-planner-2/)
+for a metro-only trip along each line at midday on a weekday, which lists
+every station in order. Each station is then looked up in the planner's stop
+finder to get the site ID that the departures API uses. That is about 100
+requests, done once; the list is kept in flash and refreshed monthly.
 
 ## Building
 
@@ -129,9 +158,11 @@ Other options (timezone, poll interval, screen rotation) are under
 *SL Departures Configuration* in `idf.py menuconfig`.
 
 Pushing to `main` makes GitHub Actions build the firmware and publish the
-installer page. Pushing a `v*` tag also attaches a merged `firmware.bin` to the
-release, for flashing with `esptool write-flash 0 firmware.bin` (this replaces
-saved Wi-Fi and station).
+installer page. Pushing a `v*` tag creates a release with two files:
+`sl-departures.bin`, which boards download to update themselves, and a merged
+`firmware.bin` for `esptool write-flash 0 firmware.bin` (this replaces saved
+Wi-Fi and station). After tagging, run the workflow on `main` once more so the
+installer page shows the new version.
 
 ### Layout
 
@@ -145,30 +176,18 @@ saved Wi-Fi and station).
 | `main/web.c` | Web pages: Wi-Fi setup portal, line and station settings |
 | `main/improv.c`, `main/serial.c` | Improv Wi-Fi for the web installer, debug keys |
 | `main/screenshot.c` | Screenshots over USB serial |
-| `main/metro_data.c` | Station order per line (generated) |
+| `main/metro_data.c` | Station list: fetched from SL, kept in flash |
+| `main/json_stream.c` | Streaming JSON reader for large API responses |
+| `main/ota.c` | Updates over Wi-Fi, rollback check |
 | `main/fonts/` | Montserrat with Swedish letters (generated) |
 | `components/dns_server` | Captive portal DNS, from the ESP-IDF examples (CC0) |
-| `tools/` | Generators for the station table and fonts, screenshot grabber |
+| `tools/` | Font generator, screenshot grabber |
 | `site/` | Web installer page |
 
 ### Debugging over USB serial
 
 `python tools/screenshot.py PORT out.png` saves the screen as a PNG. Sending
 `n`, `p` or `h` simulates a press, double press or hold of the button.
-
-### Regenerating station data
-
-```sh
-mkdir data
-curl -o data/sites_x.json 'https://transport.integration.sl.se/v1/sites?expand=true'
-curl -o data/sp.json https://transport.integration.sl.se/v1/stop-points
-python tools/routes.py data      # fetches departures from every metro station
-python tools/order.py data       # writes data/order.json
-python tools/gen_metro_data.py data/order.json main/metro_data.c
-```
-
-Run it during the day, when every line has trains. `tools/order.json` is the
-copy the current table was generated from.
 
 ### Regenerating fonts
 

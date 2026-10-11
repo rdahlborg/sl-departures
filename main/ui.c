@@ -14,6 +14,8 @@
 #include "sl_api.h"
 #include "ui.h"
 #include "wifi_setup.h"
+#include "metro_data.h"
+#include "ota.h"
 
 LV_FONT_DECLARE(sl_font_12);
 LV_FONT_DECLARE(sl_font_16);
@@ -49,6 +51,10 @@ static lv_obj_t *placeholder;
 static lv_obj_t *picker, *picker_roller, *picker_title;
 static lv_obj_t *setup_panel, *setup_qr, *setup_text, *setup_note;
 static lv_obj_t *phone_panel, *phone_qr, *phone_text;
+static lv_obj_t *boot_panel, *boot_status;
+static lv_obj_t *about_panel, *about_text;
+static lv_obj_t *update_panel, *update_title, *update_bar, *update_note;
+static uint32_t boot_started;       /* lv_tick when the UI started */
 static uint32_t phone_generation;   /* station shown when the QR code opened */
 
 typedef struct {
@@ -59,6 +65,9 @@ static row_t rows[2][LIST_ROWS];
 static sl_config_t shown;       /* config the map was built for */
 
 static void update_setup(void);
+static void update_boot(void);
+static void update_about(void);
+static void update_progress(void);
 static uint32_t line_color;
 
 static lv_obj_t *box(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color, int radius)
@@ -251,6 +260,9 @@ static void update_cb(lv_timer_t *t)
     char buf[16];
 
     update_setup();
+    update_boot();
+    update_about();
+    update_progress();
 
     sl_config_t cfg;
     sl_get_config(&cfg);
@@ -465,6 +477,149 @@ bool ui_phone_visible(void)
     return !lv_obj_is_hidden(phone_panel);
 }
 
+/* ---- start screen -------------------------------------------------- */
+
+#define BOOT_MIN_MS 2500
+
+static void build_boot(lv_obj_t *scr)
+{
+    boot_panel = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
+    lv_obj_t *bars = box(boot_panel, 0, 0, 0, 0, COL_BG, 0);
+    lv_obj_set_size(bars, 3 * 28 + 2 * 6, 6);
+    lv_obj_align(bars, LV_ALIGN_TOP_MID, 0, 34);
+    const uint32_t colors[] = { 0x179C4C, 0xD71D24, 0x0089CA };
+    for (int i = 0; i < 3; i++) {
+        box(bars, i * 34, 0, 28, 6, colors[i], 3);
+    }
+    lv_obj_t *title = text(boot_panel, &sl_font_22, COL_TEXT, "SL Departures");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_t *ver = text(boot_panel, &sl_font_16, COL_DIM, ota_version());
+    lv_obj_align(ver, LV_ALIGN_TOP_MID, 0, 80);
+    boot_status = text(boot_panel, &sl_font_12, COL_TEXT, "");
+    lv_obj_set_width(boot_status, LCD_H_RES - 20);
+    lv_obj_set_style_text_align(boot_status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(boot_status, LV_ALIGN_TOP_MID, 0, 112);
+    lv_obj_t *credit = text(boot_panel, &sl_font_12, COL_DIM, "Data: Trafiklab.se");
+    lv_obj_align(credit, LV_ALIGN_BOTTOM_MID, 0, -8);
+    boot_started = lv_tick_get();
+}
+
+static void update_boot(void)
+{
+    if (lv_obj_is_hidden(boot_panel)) {
+        return;
+    }
+    sl_config_t cfg;
+    sl_get_config(&cfg);
+    if (lv_tick_elaps(boot_started) >= BOOT_MIN_MS && metro_ready() && cfg.generation) {
+        lv_obj_set_hidden(boot_panel, true);
+        return;
+    }
+    char buf[64] = "";
+    if (!metro_ready()) {
+        metro_status(buf, sizeof(buf));
+    }
+    lv_label_set_text(boot_status, buf);
+}
+
+/* ---- about and updates ---------------------------------------------- */
+
+static void build_about(lv_obj_t *scr)
+{
+    about_panel = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
+    lv_obj_t *title = text(about_panel, &sl_font_16, COL_TEXT, "SL Departures");
+    lv_obj_set_pos(title, 12, 10);
+    about_text = text(about_panel, &sl_font_12, COL_TEXT, "");
+    lv_obj_set_width(about_text, LCD_H_RES - 24);
+    lv_obj_set_pos(about_text, 12, 36);
+    lv_obj_t *hint = text(about_panel, &sl_font_12, COL_DIM,
+                          "Håll: sök efter uppdatering · Tryck: stäng");
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 12, -8);
+    lv_obj_set_hidden(about_panel, true);
+}
+
+static void update_about(void)
+{
+    if (lv_obj_is_hidden(about_panel)) {
+        return;
+    }
+    ota_status_t os;
+    ota_get_status(&os);
+    const char *state;
+    char latest[64];
+    switch (os.state) {
+    case OTA_CHECKING:
+        state = "Söker efter uppdatering…";
+        break;
+    case OTA_UP_TO_DATE:
+        snprintf(latest, sizeof(latest), "Du har den senaste versionen (%s).", os.latest);
+        state = latest;
+        break;
+    case OTA_FAILED:
+        state = "Kunde inte söka efter uppdateringar. Försök igen senare.";
+        break;
+    default:
+        state = "Nya versioner installeras automatiskt på natten.";
+    }
+    const char *ip = board_wifi_ip();
+    char buf[256];
+    snprintf(buf, sizeof(buf), "Version %s\n%s.local%s%s\n\n%s\n\nData: Trafiklab.se",
+             ota_version(), board_hostname(), ip[0] ? " · " : "", ip, state);
+    lv_label_set_text(about_text, buf);
+}
+
+void ui_about_show(void)
+{
+    lv_obj_set_hidden(about_panel, false);
+    update_about();
+}
+
+void ui_about_hide(void)
+{
+    lv_obj_set_hidden(about_panel, true);
+}
+
+bool ui_about_visible(void)
+{
+    return !lv_obj_is_hidden(about_panel);
+}
+
+static void build_progress(lv_obj_t *scr)
+{
+    update_panel = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
+    update_title = text(update_panel, &sl_font_16, COL_TEXT, "");
+    lv_obj_align(update_title, LV_ALIGN_TOP_MID, 0, 44);
+    update_bar = lv_bar_create(update_panel);
+    lv_obj_set_size(update_bar, LCD_H_RES - 60, 12);
+    lv_obj_align(update_bar, LV_ALIGN_CENTER, 0, 4);
+    lv_obj_set_style_bg_color(update_bar, lv_color_hex(COL_TRACK), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(update_bar, lv_color_hex(COL_OK), LV_PART_INDICATOR);
+    update_note = text(update_panel, &sl_font_12, COL_DIM, "");
+    lv_obj_align(update_note, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_hidden(update_panel, true);
+}
+
+static void update_progress(void)
+{
+    ota_status_t os;
+    ota_get_status(&os);
+    bool show = os.state == OTA_DOWNLOADING || os.state == OTA_DONE;
+    lv_obj_set_hidden(update_panel, !show);
+    if (!show) {
+        return;
+    }
+    char buf[48];
+    if (os.state == OTA_DONE) {
+        lv_label_set_text(update_title, "Startar om…");
+        lv_bar_set_value(update_bar, 100, LV_ANIM_OFF);
+    } else {
+        snprintf(buf, sizeof(buf), "Uppdaterar till %s… %d %%", os.latest, os.progress);
+        lv_label_set_text(update_title, buf);
+        lv_bar_set_value(update_bar, os.progress, LV_ANIM_ON);
+    }
+    lv_label_set_text(update_note, "Dra inte ur sladden.");
+}
+
 static void build_picker(lv_obj_t *scr)
 {
     picker = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
@@ -536,7 +691,10 @@ void ui_init(void)
     build_list(scr);
     build_picker(scr);
     build_phone(scr);
+    build_about(scr);
+    build_boot(scr);
     build_setup(scr);
+    build_progress(scr);
 
     update_cb(NULL);
     lv_timer_create(update_cb, 250, NULL);

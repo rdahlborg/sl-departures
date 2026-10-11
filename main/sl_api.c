@@ -32,6 +32,8 @@ static SemaphoreHandle_t state_mutex;
 static sl_state_t state;
 static sl_config_t config;
 static TaskHandle_t poll_handle;
+static volatile bool paused;
+static volatile bool ever_succeeded;
 
 typedef struct {
     char *buf;
@@ -214,7 +216,7 @@ static void poll_task(void *arg)
     static sl_state_t next;
 
     while (1) {
-        if (!board_wifi_connected() || !board_time_valid()) {
+        if (!board_wifi_connected() || !board_time_valid() || paused) {
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
             continue;
         }
@@ -225,6 +227,7 @@ static void poll_task(void *arg)
                   poll_direction(client, &resp, &cfg, SL_LEFTBOUND, &next.dir[SL_LEFTBOUND]);
         if (ok) {
             next.updated = time(NULL);
+            ever_succeeded = true;
             next.generation = cfg.generation;
             xSemaphoreTake(state_mutex, portMAX_DELAY);
             /* Drop results for a station the user has since switched away from. */
@@ -296,11 +299,28 @@ void sl_get_config(sl_config_t *out)
     xSemaphoreGive(state_mutex);
 }
 
-void sl_start(int group, uint16_t site)
+void sl_init(void)
 {
     state_mutex = xSemaphoreCreateMutex();
+}
+
+void sl_start(int group, uint16_t site)
+{
     sl_select(group, site);
     xTaskCreate(poll_task, "sl_poll", 8192, NULL, 4, &poll_handle);
+}
+
+void sl_set_paused(bool pause)
+{
+    paused = pause;
+    if (!pause && poll_handle) {
+        xTaskNotifyGive(poll_handle);
+    }
+}
+
+bool sl_has_succeeded(void)
+{
+    return ever_succeeded;
 }
 
 bool sl_snapshot(sl_state_t *out)

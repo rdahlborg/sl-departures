@@ -54,9 +54,20 @@ typedef struct {
     uint32_t generation;
 } sl_state_t;
 
-/* Start the background polling task showing `site` on line group `group`.
- * Falls back to the group's first station if the site is not on it. */
+/* Create the state lock; call before anything reads SL state. Until
+ * sl_start() the config has generation 0 and there is no data. */
+void sl_init(void);
+
+/* Start the background polling task showing `site` on line group `group`,
+ * once the station list is ready. Falls back to the group's first station
+ * if the site is not on it. */
 void sl_start(int group, uint16_t site);
+
+/* Stop polling while a firmware update downloads, to save RAM for TLS. */
+void sl_set_paused(bool pause);
+
+/* True once a poll has succeeded since boot (firmware health check). */
+bool sl_has_succeeded(void);
 
 /* Switch station. Clears the current data and polls immediately. */
 void sl_select(int group, uint16_t site);

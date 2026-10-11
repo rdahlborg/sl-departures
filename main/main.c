@@ -4,11 +4,22 @@
 #include "esp_lvgl_port.h"
 #include "board.h"
 #include "controls.h"
+#include "metro_data.h"
+#include "ota.h"
 #include "serial.h"
 #include "sl_api.h"
 #include "ui.h"
 #include "web.h"
 #include "wifi_setup.h"
+
+static int saved_group;
+static uint16_t saved_site;
+
+/* Runs once the station list is loaded or fetched. */
+static void stations_ready(void)
+{
+    sl_start(saved_group, saved_site);
+}
 
 void app_main(void)
 {
@@ -18,14 +29,14 @@ void app_main(void)
 
     /* Initialises NVS, which controls_load() reads from. */
     board_wifi_init();
+    /* Early, so a new version's health check starts right away. */
+    ota_init();
     /* Early, so the web installer's Improv query gets an answer quickly. */
     serial_init();
 
-    int group;
-    uint16_t site;
-    controls_load(&group, &site);
-    /* Before the UI, which reads SL state; polling waits for Wi-Fi itself. */
-    sl_start(group, site);
+    controls_load(&saved_group, &saved_site);
+    /* Before the UI, which reads SL state. */
+    sl_init();
 
     board_display_init();
     lvgl_port_lock(0);
@@ -41,4 +52,6 @@ void app_main(void)
     if (!board_wifi_configured()) {
         wifi_setup_start();
     }
+    metro_start(stations_ready);
+    ota_start();
 }

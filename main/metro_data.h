@@ -1,6 +1,12 @@
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
+
+/* Metro lines and stations. Only the lines and their end stations are built
+ * in; the stations along each line, their names and SL site IDs are fetched
+ * from SL's journey planner on first boot and kept in flash. */
 
 #define METRO_N_GROUPS 3
 
@@ -26,6 +32,20 @@ typedef struct {
     const uint16_t *stations;
 } metro_group_t;
 
-extern const metro_group_t metro_groups[METRO_N_GROUPS];
+/* Valid once metro_ready() is true. */
+extern metro_group_t metro_groups[METRO_N_GROUPS];
+
+/* Load the station list from flash, or fetch it from SL in the background
+ * once Wi-Fi is up. `on_ready` runs once, from the loader task, when the
+ * list is available. */
+void metro_start(void (*on_ready)(void));
+bool metro_ready(void);
+
+/* Progress of the first download, for the start screen. */
+void metro_status(char *buf, size_t len);
+
+/* Refresh the list from SL if it is older than a month. Blocks; run it
+ * from a maintenance task while departure polling is paused. */
+void metro_refresh_if_stale(void);
 
 const char *metro_station_name(uint16_t site);
