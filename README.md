@@ -12,8 +12,9 @@ Made by Robert Dahlborg.
 
 - Every station on the green, red and blue lines (10, 11, 13, 14, 17, 18, 19).
 - Line map with four stations each side. Trains are placed from live data and
-  glide along the track between updates; an arrow and a trail mark trains on
-  their way, and a blinking outline marks a train at the platform.
+  glide along the track between updates, in towards your station and on out
+  the other side; an arrow and a trail mark trains on their way, and a
+  blinking outline marks a train at the platform.
 - The next two departures in each direction, with countdowns and cancellations.
 - Choose line and station with the BOOT button or from your phone. Your choice
   is remembered.
@@ -122,8 +123,10 @@ get the flash layout that updates over Wi-Fi use.
 SL has no public vehicle positions for the metro. Every departure from the
 [SL Transport API](https://www.trafiklab.se/api/other-apis/sl/transport/) does
 carry a journey ID shared across stations, though. So the board also fetches up
-to five stations on each side of yours. The furthest one that still lists a
-train is where that train stops next. Its expected arrival there, and the time
+to five stations on each side of yours. For a train on its way in, the
+furthest one that still lists it is where it stops next. The same answers list
+trains going the other way, which have already passed your station; for those,
+the nearest station listing them is their next stop. Its expected arrival there, and the time
 between stations, place it along the track. The API needs no key; a poll every
 20 seconds takes up to 12 requests.
 
