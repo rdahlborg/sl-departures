@@ -6,6 +6,7 @@
  *
  * The map is rebuilt whenever the selected station changes.
  */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -46,6 +47,12 @@ static lv_obj_t *status_dot;
 static lv_obj_t *map_layer;
 static lv_obj_t *markers[2][SL_MAX_TRAINS];
 static lv_obj_t *marker_labels[2][SL_MAX_TRAINS];
+/* Track drawn from the last station a train passed up to the train. */
+static lv_obj_t *trails[2][SL_MAX_TRAINS];
+/* Where each marker is drawn, easing towards the computed position, and
+ * which train it shows, so a marker handed to another train jumps. */
+static float marker_x[2][SL_MAX_TRAINS];
+static int64_t marker_journey[2][SL_MAX_TRAINS];
 static lv_obj_t *col_header[2];
 static lv_obj_t *placeholder;
 static lv_obj_t *picker, *picker_roller, *picker_title;
@@ -117,6 +124,11 @@ static lv_obj_t *station_label(lv_obj_t *parent, const char *name, int x, int y,
     return l;
 }
 
+static float map_xf(int dir, float pos)
+{
+    return dir == SL_RIGHTBOUND ? MAP_CX - pos * MAP_SPACING : MAP_CX + pos * MAP_SPACING;
+}
+
 static int map_x(int dir, float pos)
 {
     /* Rightbound trains arrive from the left. */
@@ -168,8 +180,17 @@ static void build_map(const sl_config_t *c)
     }
     box(map_layer, MAP_CX - 6, TRACK_R_Y - 8, 12, TRACK_L_Y - TRACK_R_Y + 16, COL_TEXT, 6);
 
+    /* Trails first, so they are drawn under the trains. */
+    for (int dir = 0; dir < 2; dir++) {
+        int y = dir == SL_RIGHTBOUND ? TRACK_R_Y : TRACK_L_Y;
+        for (int i = 0; i < SL_MAX_TRAINS; i++) {
+            trails[dir][i] = box(map_layer, 0, y - 1, 0, 3, line_color, 1);
+            lv_obj_set_hidden(trails[dir][i], true);
+        }
+    }
     for (int dir = 0; dir < 2; dir++) {
         for (int i = 0; i < SL_MAX_TRAINS; i++) {
+            marker_journey[dir][i] = 0;
             lv_obj_t *m = box(map_layer, 0, 0, 22, 14, line_color, 4);
             lv_obj_set_style_border_color(m, lv_color_hex(COL_TEXT), 0);
             lv_obj_set_style_border_width(m, 1, 0);
@@ -221,11 +242,12 @@ static void build_list(lv_obj_t *scr)
             lv_obj_center(row->badge_label);
             row->dest = text(scr, &sl_font_12, COL_TEXT, "");
             lv_obj_set_pos(row->dest, col_x[dir] + 27, y + 3);
-            one_line(row->dest, 72);
+            one_line(row->dest, 62);
+            /* Wide enough for "59 min". */
             row->mins = text(scr, &sl_font_16, COL_TEXT, "");
-            one_line(row->mins, 50);
+            one_line(row->mins, 60);
             lv_obj_set_style_text_align(row->mins, LV_TEXT_ALIGN_RIGHT, 0);
-            lv_obj_set_pos(row->mins, col_x[dir] + 98, y);
+            lv_obj_set_pos(row->mins, col_x[dir] + 88, y);
         }
     }
     placeholder = text(scr, &sl_font_12, COL_DIM, "");
@@ -251,6 +273,53 @@ static void format_mins(char *buf, size_t len, const sl_train_t *tr, time_t now)
         struct tm tm;
         localtime_r(&tr->t[0], &tm);
         strftime(buf, len, "%H:%M", &tm);
+    }
+}
+
+/* A train between stations has a direction arrow and a trail back to the
+ * station it left; at a platform it has neither, and its border blinks
+ * while it is boarding. Markers ease towards their position, so they glide
+ * rather than jump when new data arrives. */
+static void draw_train(int dir, int i, const sl_train_t *tr, float pos)
+{
+    int y = dir == SL_RIGHTBOUND ? TRACK_R_Y : TRACK_L_Y;
+    float target = map_xf(dir, pos);
+    float *x = &marker_x[dir][i];
+    if (marker_journey[dir][i] != tr->journey || fabsf(target - *x) > MAP_SPACING) {
+        *x = target;
+        marker_journey[dir][i] = tr->journey;
+    } else {
+        *x += (target - *x) * 0.25f;
+    }
+
+    bool moving = pos - floorf(pos) > 0.02f;
+    int w = moving ? 30 : 22;
+    lv_obj_t *m = markers[dir][i];
+    lv_obj_set_size(m, w, 14);
+    lv_obj_set_pos(m, (int)(*x + 0.5f) - w / 2, y - 7);
+    if (!moving) {
+        lv_label_set_text_fmt(marker_labels[dir][i], "%d", tr->line);
+    } else if (dir == SL_RIGHTBOUND) {
+        lv_label_set_text_fmt(marker_labels[dir][i], "%d→", tr->line);
+    } else {
+        lv_label_set_text_fmt(marker_labels[dir][i], "←%d", tr->line);
+    }
+    lv_obj_center(marker_labels[dir][i]);
+
+    /* Boarding: blink the border once a second. */
+    bool boarding = !moving && (tr->at_stop & (1 << (int)pos));
+    lv_obj_set_style_border_opa(m, boarding && (lv_tick_get() / 500) % 2 ? LV_OPA_TRANSP
+                                                                        : LV_OPA_COVER, 0);
+
+    if (moving) {
+        /* From the station behind the train (or the screen edge) to it. */
+        float from = map_xf(dir, ceilf(pos));
+        if (from < 0) from = 0;
+        if (from > LCD_H_RES) from = LCD_H_RES;
+        int x0 = (int)fminf(from, *x), x1 = (int)fmaxf(from, *x);
+        lv_obj_set_pos(trails[dir][i], x0, y - 1);
+        lv_obj_set_width(trails[dir][i], x1 - x0);
+        lv_obj_set_hidden(trails[dir][i], x1 - x0 < 2);
     }
 }
 
@@ -296,17 +365,18 @@ static void update_cb(lv_timer_t *t)
         const sl_dir_t *d = &st.dir[dir];
 
         for (int i = 0; i < SL_MAX_TRAINS; i++) {
-            float pos = have && i < d->n ? sl_train_position(&d->trains[i], d->n_up, now) : -1;
+            const sl_train_t *tr = &d->trains[i];
+            float pos = have && i < d->n ? sl_train_position(tr, d->n_up, now) : -1;
             /* Allow half a spacing past the last drawn station so trains
              * slide in from the edge. */
             bool show = pos >= 0 && pos <= MAP_SHOWN + 0.6f;
             lv_obj_set_hidden(markers[dir][i], !show);
+            lv_obj_set_hidden(trails[dir][i], true);
             if (!show) {
+                marker_journey[dir][i] = 0;
                 continue;
             }
-            int y = dir == SL_RIGHTBOUND ? TRACK_R_Y : TRACK_L_Y;
-            lv_obj_set_pos(markers[dir][i], map_x(dir, pos) - 11, y - 7);
-            lv_label_set_text_fmt(marker_labels[dir][i], "%d", d->trains[i].line);
+            draw_train(dir, i, tr, pos);
         }
 
         /* Departures list: skip trains that have already left. */
@@ -495,10 +565,12 @@ static void build_boot(lv_obj_t *scr)
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
     lv_obj_t *ver = text(boot_panel, &sl_font_16, COL_DIM, ota_version());
     lv_obj_align(ver, LV_ALIGN_TOP_MID, 0, 80);
+    lv_obj_t *author = text(boot_panel, &sl_font_12, COL_DIM, "av " CONFIG_APP_AUTHOR);
+    lv_obj_align(author, LV_ALIGN_TOP_MID, 0, 101);
     boot_status = text(boot_panel, &sl_font_12, COL_TEXT, "");
     lv_obj_set_width(boot_status, LCD_H_RES - 20);
     lv_obj_set_style_text_align(boot_status, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(boot_status, LV_ALIGN_TOP_MID, 0, 112);
+    lv_obj_align(boot_status, LV_ALIGN_TOP_MID, 0, 124);
     lv_obj_t *credit = text(boot_panel, &sl_font_12, COL_DIM, "Data: Trafiklab.se");
     lv_obj_align(credit, LV_ALIGN_BOTTOM_MID, 0, -8);
     boot_started = lv_tick_get();
@@ -568,8 +640,8 @@ static void update_about(void)
     }
     const char *ip = board_wifi_ip();
     char buf[256];
-    snprintf(buf, sizeof(buf), "Version %s\n%s.local%s%s\n\n%s\n\nData: Trafiklab.se",
-             ota_version(), board_hostname(), ip[0] ? " · " : "", ip, state);
+    snprintf(buf, sizeof(buf), "Version %s av %s\n%s.local%s%s\n\n%s\n\nData: Trafiklab.se",
+             ota_version(), CONFIG_APP_AUTHOR, board_hostname(), ip[0] ? " · " : "", ip, state);
     lv_label_set_text(about_text, buf);
 }
 

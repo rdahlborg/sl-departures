@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SL Departures</title>
   <meta name="description" content="Live Stockholm metro departures and train positions on an ESP32-C6 display. Install from the browser.">
+  <meta name="author" content="Robert Dahlborg">
   <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
   <style>
     :root {
@@ -134,7 +135,7 @@
     </table>
   </div>
   <p class="note">The line list has the three lines, then <em>Mobil…</em>, <em>Wi-Fi…</em> and <em>Om / Uppdatera…</em>. <strong>Mobil…</strong> shows a QR code: scan it with a phone on the same Wi-Fi to choose the line and station there.</p>
-  <p class="note">The board remembers your station. The map shows four stations each side of yours. Trains are placed from SL's real-time departures at the neighbouring stations, so they move along the line as they approach.</p>
+  <p class="note">The board remembers your station. The map shows four stations each side of yours. Trains are placed from SL's real-time departures at the neighbouring stations and glide along the track. An arrow and a trail mark a train on its way; a blinking outline marks one at the platform.</p>
 
   <div class="gallery">
     <img src="slussen.png" alt="Slussen on the red line" width="960" height="516">
@@ -163,6 +164,7 @@
   </ul>
 
   <footer>
+    <p>Made by Robert Dahlborg (<a href="https://github.com/rdahlborg">@rdahlborg</a>).</p>
     <p>Data from <a href="https://www.trafiklab.se/">Trafiklab.se</a> (SL Transport API). Not affiliated with SL or Trafiklab.</p>
     <p>Source code and build instructions on <a href="https://github.com/rdahlborg/sl-departures">GitHub</a>.</p>
   </footer>

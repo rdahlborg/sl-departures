@@ -2,6 +2,7 @@
 
 Live Stockholm metro departures and train positions on a
 [Waveshare ESP32-C6-LCD-1.47](https://www.waveshare.com/esp32-c6-lcd-1.47.htm).
+Made by Robert Dahlborg.
 
 ![Brommaplan on the green line](screenshots/brommaplan.png)
 
@@ -10,7 +11,9 @@ Live Stockholm metro departures and train positions on a
 ## Features
 
 - Every station on the green, red and blue lines (10, 11, 13, 14, 17, 18, 19).
-- Line map with four stations each side, with trains placed from live data.
+- Line map with four stations each side. Trains are placed from live data and
+  glide along the track between updates; an arrow and a trail mark trains on
+  their way, and a blinking outline marks a train at the platform.
 - The next two departures in each direction, with countdowns and cancellations.
 - Choose line and station with the BOOT button or from your phone. Your choice
   is remembered.
@@ -204,6 +207,11 @@ tools/gen_fonts.sh DIR   # DIR holds Montserrat-Medium, -SemiBold and -Bold .ttf
 - [LVGL](https://lvgl.io/), [ESP Web Tools](https://esphome.github.io/esp-web-tools/),
   [Improv Wi-Fi](https://www.improv-wifi.com/), and Espressif's button, mDNS
   and LVGL port components.
+
+## Author
+
+Robert Dahlborg ([@rdahlborg](https://github.com/rdahlborg)). Issues and pull
+requests are welcome.
 
 ## License
 

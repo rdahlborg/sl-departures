@@ -44,7 +44,10 @@ static const char PAGE_HEAD[] =
     "<div class=bar><i style=background:#179c4c></i><i style=background:#d71d24></i>"
     "<i style=background:#0089ca></i></div>";
 
-static const char PAGE_TAIL[] = "</main></body></html>";
+static const char PAGE_TAIL[] =
+    "<p style='margin-top:40px;font-size:.85em'>SL Departures av " CONFIG_APP_AUTHOR
+    " · <a style='color:#93a59c' href='https://github.com/" CONFIG_OTA_GITHUB_REPO "'>GitHub</a>"
+    " · Data: Trafiklab.se</p></main></body></html>";
 
 /* ---- helpers -------------------------------------------------------- */
 

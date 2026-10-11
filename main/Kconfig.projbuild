@@ -1,4 +1,7 @@
 menu "SL Departures Configuration"
+    config APP_AUTHOR
+        string "Author shown on the start and about screens and web pages"
+        default "Robert Dahlborg"
     config WIFI_SSID
         string "Wi-Fi SSID"
         default ""
