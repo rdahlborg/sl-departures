@@ -7,6 +7,7 @@
 #include "serial.h"
 #include "sl_api.h"
 #include "ui.h"
+#include "wifi_setup.h"
 
 void app_main(void)
 {
@@ -32,4 +33,10 @@ void app_main(void)
 
     controls_init();
     serial_ui_ready();
+
+    /* First boot: offer phone setup straight away. USB setup through the
+     * web installer works at the same time. */
+    if (!board_wifi_configured()) {
+        wifi_setup_start();
+    }
 }

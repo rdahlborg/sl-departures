@@ -27,4 +27,14 @@ typedef struct {
 
 /* Scan for networks. Returns the number written to aps. */
 int board_wifi_scan(board_ap_t *aps, int max);
+
+/* Stop background reconnect attempts, which would make the radio hop
+ * channels and drop phones connected to the setup hotspot. */
+void board_wifi_hold(bool hold);
+
+/* Setup hotspot (AP+STA). The STA side keeps working alongside it. */
+void board_ap_start(const char *ssid, const char *password);
+void board_ap_stop(void);
+/* "WIFI_AP_DEF" netif key, for the DNS server. */
+#define BOARD_AP_NETIF_KEY "WIFI_AP_DEF"
 bool board_time_valid(void);

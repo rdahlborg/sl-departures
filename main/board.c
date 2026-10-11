@@ -40,6 +40,7 @@ static volatile bool wifi_configured;
 /* Set while scanning or provisioning so the event handler doesn't fight
  * over the radio by reconnecting. */
 static volatile bool wifi_paused;
+static volatile bool wifi_hold;
 static volatile int fail_count;
 static EventGroupHandle_t wifi_events;
 
@@ -137,7 +138,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
         wifi_connected = false;
         fail_count++;
         xEventGroupSetBits(wifi_events, BIT_FAILED);
-        if (wifi_configured && !wifi_paused) {
+        if (wifi_configured && !wifi_paused && !wifi_hold) {
             esp_wifi_connect();
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
@@ -161,6 +162,7 @@ void board_wifi_init(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
+    esp_netif_create_default_wifi_ap();
 
     wifi_events = xEventGroupCreate();
     wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -206,6 +208,12 @@ bool board_wifi_provision(const char *ssid, const char *password, int timeout_ms
     strlcpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
     strlcpy((char *)cfg.sta.password, password, sizeof(cfg.sta.password));
 
+    /* The driver saves whatever it is given, so keep the old network to
+     * put back if the new one doesn't work. */
+    wifi_config_t previous = { 0 };
+    esp_wifi_get_config(WIFI_IF_STA, &previous);
+    bool was_configured = wifi_configured;
+
     wifi_paused = true;
     esp_wifi_disconnect();
     if (esp_wifi_set_config(WIFI_IF_STA, &cfg) != ESP_OK) {
@@ -236,9 +244,13 @@ bool board_wifi_provision(const char *ssid, const char *password, int timeout_ms
     }
     wifi_paused = false;
     if (!ok) {
-        ESP_LOGW(TAG, "Could not connect to %s", ssid);
-        /* Keep trying in the background in case it was a transient failure. */
-        esp_wifi_connect();
+        ESP_LOGW(TAG, "Could not connect to %s, keeping the previous network", ssid);
+        esp_wifi_disconnect();
+        esp_wifi_set_config(WIFI_IF_STA, &previous);
+        wifi_configured = was_configured;
+        if (wifi_configured && !wifi_hold) {
+            esp_wifi_connect();
+        }
     }
     return ok;
 }
@@ -272,10 +284,42 @@ int board_wifi_scan(board_ap_t *aps, int max)
         esp_wifi_clear_ap_list();
     }
     wifi_paused = false;
-    if (!was_connected && wifi_configured) {
+    if (!was_connected && wifi_configured && !wifi_hold) {
         esp_wifi_connect();
     }
     return n;
+}
+
+void board_wifi_hold(bool hold)
+{
+    wifi_hold = hold;
+    if (hold && !wifi_connected) {
+        esp_wifi_disconnect();
+    } else if (!hold && !wifi_connected && wifi_configured) {
+        esp_wifi_connect();
+    }
+}
+
+void board_ap_start(const char *ssid, const char *password)
+{
+    wifi_config_t ap = {
+        .ap = {
+            .max_connection = 2,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+    strlcpy((char *)ap.ap.ssid, ssid, sizeof(ap.ap.ssid));
+    ap.ap.ssid_len = strlen(ssid);
+    strlcpy((char *)ap.ap.password, password, sizeof(ap.ap.password));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
+    ESP_LOGI(TAG, "Setup hotspot %s started", ssid);
+}
+
+void board_ap_stop(void)
+{
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    ESP_LOGI(TAG, "Setup hotspot stopped");
 }
 
 bool board_time_valid(void)

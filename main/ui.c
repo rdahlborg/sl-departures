@@ -7,11 +7,13 @@
  * The map is rebuilt whenever the selected station changes.
  */
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include "lvgl.h"
 #include "board.h"
 #include "sl_api.h"
 #include "ui.h"
+#include "wifi_setup.h"
 
 LV_FONT_DECLARE(sl_font_12);
 LV_FONT_DECLARE(sl_font_16);
@@ -45,6 +47,7 @@ static lv_obj_t *marker_labels[2][SL_MAX_TRAINS];
 static lv_obj_t *col_header[2];
 static lv_obj_t *placeholder;
 static lv_obj_t *picker, *picker_roller, *picker_title;
+static lv_obj_t *setup_panel, *setup_qr, *setup_text, *setup_note;
 
 typedef struct {
     lv_obj_t *badge, *badge_label, *dest, *mins;
@@ -52,6 +55,8 @@ typedef struct {
 static row_t rows[2][LIST_ROWS];
 
 static sl_config_t shown;       /* config the map was built for */
+
+static void update_setup(void);
 static uint32_t line_color;
 
 static lv_obj_t *box(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color, int radius)
@@ -243,6 +248,8 @@ static void update_cb(lv_timer_t *t)
     time_t now = time(NULL);
     char buf[16];
 
+    update_setup();
+
     sl_config_t cfg;
     sl_get_config(&cfg);
     if (cfg.generation != shown.generation) {
@@ -264,7 +271,7 @@ static void update_cb(lv_timer_t *t)
     /* SL's terms ask for the data source to be credited. */
     lv_label_set_text(placeholder, board_wifi_configured()
         ? "Hämtar avgångar…\nData: Trafiklab.se"
-        : "Wi-Fi saknas. Anslut via USB och öppna\n" CONFIG_INSTALLER_URL);
+        : "Wi-Fi saknas. Håll knappen och välj Wi-Fi…\neller öppna " CONFIG_INSTALLER_URL);
     lv_obj_set_hidden(placeholder, have);
 
     for (int dir = 0; dir < 2; dir++) {
@@ -306,6 +313,99 @@ static void update_cb(lv_timer_t *t)
             lv_label_set_text(rows[dir][r].mins, "");
         }
     }
+}
+
+static void build_setup(lv_obj_t *scr)
+{
+    setup_panel = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
+
+    setup_qr = lv_qrcode_create(setup_panel);
+    lv_qrcode_set_size(setup_qr, 132);
+    lv_qrcode_set_dark_color(setup_qr, lv_color_black());
+    lv_qrcode_set_light_color(setup_qr, lv_color_white());
+    lv_qrcode_set_quiet_zone(setup_qr, true);
+    lv_obj_set_pos(setup_qr, 12, 20);
+
+    lv_obj_t *title = text(setup_panel, &sl_font_16, COL_TEXT, "Ställ in Wi-Fi");
+    lv_obj_set_pos(title, 158, 10);
+
+    setup_text = text(setup_panel, &sl_font_12, COL_TEXT, "");
+    lv_obj_set_width(setup_text, LCD_H_RES - 166);
+    lv_obj_set_pos(setup_text, 158, 34);
+
+    setup_note = text(setup_panel, &sl_font_12, COL_DIM, "");
+    lv_obj_set_width(setup_note, LCD_H_RES - 166);
+    lv_obj_align(setup_note, LV_ALIGN_BOTTOM_LEFT, 158, -8);
+    lv_obj_set_hidden(setup_panel, true);
+}
+
+static void show_qr(const char *data)
+{
+    static char shown_qr[128];
+    lv_obj_set_hidden(setup_qr, data == NULL);
+    if (data && strcmp(data, shown_qr) != 0) {
+        strlcpy(shown_qr, data, sizeof(shown_qr));
+        lv_qrcode_update(setup_qr, data, strlen(data));
+    }
+}
+
+static void update_setup(void)
+{
+    setup_status_t ss;
+    wifi_setup_get_status(&ss);
+    lv_obj_set_hidden(setup_panel, ss.state == SETUP_OFF);
+    if (ss.state == SETUP_OFF) {
+        return;
+    }
+    char buf[160];
+    uint32_t color = COL_TEXT;
+    switch (ss.state) {
+    case SETUP_STARTING:
+        show_qr(NULL);
+        lv_label_set_text(setup_text, "Startar…");
+        break;
+    case SETUP_WAITING:
+        /* Standard Wi-Fi QR code: phone cameras offer to join directly. */
+        snprintf(buf, sizeof(buf), "WIFI:T:WPA;S:%s;P:%s;;", ss.ap_ssid, ss.ap_password);
+        show_qr(buf);
+        snprintf(buf, sizeof(buf),
+                 "1. Skanna koden med mobilens kamera.\n"
+                 "2. Välj ditt nätverk på sidan som öppnas.");
+        lv_label_set_text(setup_text, buf);
+        break;
+    case SETUP_PHONE:
+        show_qr("http://192.168.4.1/");
+        lv_label_set_text(setup_text, "Mobilen är ansluten.\n"
+                                      "Öppnas ingen sida? Skanna koden igen eller gå till 192.168.4.1");
+        break;
+    case SETUP_CONNECTING:
+        show_qr(NULL);
+        snprintf(buf, sizeof(buf), "Ansluter till %s…", ss.target);
+        lv_label_set_text(setup_text, buf);
+        break;
+    case SETUP_DONE:
+        show_qr(NULL);
+        snprintf(buf, sizeof(buf), "Klart!\nAnsluten till %s.", ss.target);
+        lv_label_set_text(setup_text, buf);
+        color = COL_OK;
+        break;
+    default:
+        break;
+    }
+    lv_obj_set_style_text_color(setup_text, lv_color_hex(color), 0);
+
+    if (ss.last_failed && (ss.state == SETUP_WAITING || ss.state == SETUP_PHONE)) {
+        snprintf(buf, sizeof(buf), "Kunde inte ansluta till %s. Försök igen.", ss.target);
+        lv_obj_set_style_text_color(setup_note, lv_color_hex(COL_ERR), 0);
+    } else if (ss.state == SETUP_WAITING) {
+        snprintf(buf, sizeof(buf), "%s\nLösenord: %s\nHåll knappen: avbryt",
+                 ss.ap_ssid, ss.ap_password);
+        lv_obj_set_style_text_color(setup_note, lv_color_hex(COL_DIM), 0);
+    } else {
+        snprintf(buf, sizeof(buf), "%s", ss.state == SETUP_DONE ? "" : "Håll knappen: avbryt");
+        lv_obj_set_style_text_color(setup_note, lv_color_hex(COL_DIM), 0);
+    }
+    lv_label_set_text(setup_note, buf);
 }
 
 static void build_picker(lv_obj_t *scr)
@@ -378,6 +478,7 @@ void ui_init(void)
 
     build_list(scr);
     build_picker(scr);
+    build_setup(scr);
 
     update_cb(NULL);
     lv_timer_create(update_cb, 250, NULL);

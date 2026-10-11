@@ -7,7 +7,8 @@ Live Stockholm metro departures and train positions on a
 
 **Install from your browser:** https://rdahlborg.github.io/sl-departures
 (Chrome or Edge on a computer, with the board on a USB-C data cable). After
-flashing, the installer asks for your Wi-Fi details.
+flashing, the installer asks for your Wi-Fi details. You can also set up Wi-Fi
+later from your phone.
 
 ## Features
 
@@ -21,6 +22,23 @@ flashing, the installer asks for your Wi-Fi details.
 | Departure board | next station | previous station | choose line |
 | Line list | next line | previous line | select |
 | Station list | next station | previous station | select |
+| Wi-Fi setup | | | cancel |
+
+## Wi-Fi setup from a phone
+
+![Wi-Fi setup screen](screenshots/wifi-setup.png)
+
+On first boot, or from **Wi-Fi…** at the end of the line list, the board
+starts a hotspot and shows a QR code:
+
+1. Scan the code with the phone camera to join the hotspot. Its password is
+   random each time and is included in the code.
+2. A setup page opens. If it doesn't, the screen shows a second code for
+   `http://192.168.4.1`. Pick your network and enter the password.
+3. The board shows whether it connected. A wrong password leaves the
+   previous network in place.
+
+The web installer can also set Wi-Fi over USB (*Change Wi-Fi*).
 
 ## How trains are placed
 
@@ -64,7 +82,9 @@ installer page. Pushing a `v*` tag also attaches `firmware.bin` to the release.
 | `main/ui.c` | LVGL screen: header, line map, departures, picker |
 | `main/controls.c` | BOOT button gestures, saved station |
 | `main/board.c` | Display, Wi-Fi, time sync |
+| `main/wifi_setup.c` | Phone setup: hotspot, QR code, captive portal page |
 | `main/improv.c`, `main/serial.c` | Improv Wi-Fi setup for the web installer, debug keys |
+| `components/dns_server` | Captive portal DNS, from the ESP-IDF examples (CC0) |
 | `main/metro_data.c` | Station order per line (generated) |
 | `tools/` | Generators for the station table and fonts, screenshot grabber |
 | `site/` | Web installer page |

@@ -3,6 +3,9 @@
  *   board view       click: next station   double: previous   hold: pick line
  *   line picker      click: next line      double: previous   hold: choose
  *   station picker   click: next station   double: previous   hold: choose
+ *   Wi-Fi setup      hold: cancel
+ *
+ * The line picker ends with a "Wi-Fi…" entry that starts phone setup.
  *
  * The picker closes without changes after PICKER_TIMEOUT_MS of inactivity.
  */
@@ -15,6 +18,7 @@
 #include "button_gpio.h"
 #include "sl_api.h"
 #include "ui.h"
+#include "wifi_setup.h"
 #include "controls.h"
 
 #define PIN_BOOT            9
@@ -89,13 +93,17 @@ static void step_station(int delta)
     select_station(c.group, g->stations[i]);
 }
 
+/* The entry after the line groups in the line picker. */
+#define PICK_WIFI METRO_N_GROUPS
+
 static void show_line_picker(void)
 {
     options[0] = '\0';
     for (int i = 0; i < METRO_N_GROUPS; i++) {
-        if (i) strlcat(options, "\n", sizeof(options));
         strlcat(options, metro_groups[i].name, sizeof(options));
+        strlcat(options, "\n", sizeof(options));
     }
+    strlcat(options, "Wi-Fi…", sizeof(options));
     ui_picker_show("Välj linje", options, pick_index, metro_groups[pick_index].color);
 }
 
@@ -112,7 +120,7 @@ static void show_station_picker(void)
 
 static int picker_count(void)
 {
-    return mode == MODE_PICK_LINE ? METRO_N_GROUPS : metro_groups[pick_group].n_stations;
+    return mode == MODE_PICK_LINE ? METRO_N_GROUPS + 1 : metro_groups[pick_group].n_stations;
 }
 
 typedef enum { EV_NEXT, EV_PREV, EV_HOLD, EV_TIMEOUT } event_t;
@@ -120,6 +128,12 @@ typedef enum { EV_NEXT, EV_PREV, EV_HOLD, EV_TIMEOUT } event_t;
 /* Runs with the LVGL lock held. */
 static void handle(event_t ev)
 {
+    if (wifi_setup_active()) {
+        if (ev == EV_HOLD) {
+            wifi_setup_stop();
+        }
+        return;
+    }
     if (ev == EV_TIMEOUT) {
         if (mode != MODE_BOARD) {
             ui_picker_hide();
@@ -153,6 +167,11 @@ static void handle(event_t ev)
             int n = picker_count();
             pick_index = (pick_index + (ev == EV_NEXT ? 1 : -1) + n) % n;
             ui_picker_select(pick_index);
+        } else if (mode == MODE_PICK_LINE && pick_index == PICK_WIFI) {
+            esp_timer_stop(timeout_timer);
+            ui_picker_hide();
+            mode = MODE_BOARD;
+            wifi_setup_start();
         } else if (mode == MODE_PICK_LINE) {
             pick_group = pick_index;
             /* Start on the current station if it is on this line too. */
