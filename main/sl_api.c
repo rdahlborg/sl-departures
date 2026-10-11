@@ -7,6 +7,9 @@
  * other way, which have already left home; the nearest station still
  * listing one of those is where it stops next on its way out.
  *
+ * Home and the nearest station on each side are fetched every
+ * CONFIG_SL_POLL_SECONDS, the stations further out every SLOW_EVERY:th time:
+ * arrivals near home show up quickly without loading SL's free API more.
  * Responses are read as a stream (json_stream.c), so even the largest
  * interchange station answers need no buffer.
  */
@@ -202,48 +205,68 @@ typedef struct {
     uint8_t at_stop;
 } candidate_t;
 
+/* What a neighbouring station listed when it was last fetched. The nearest
+ * station on each side is fetched on every poll, the others on every
+ * SLOW_EVERY:th, so their answers are kept in between. */
+#define CACHE_MAX   32
+#define SLOW_EVERY  3
+/* A kept answer whose time is this far past is probably for a train that
+ * has since passed; it is ignored until the station is fetched again. */
+#define CACHE_STALE_S 20
+
 typedef struct {
-    const metro_group_t *g;
-    int side;               /* the stations are upstream for this direction */
-    int k;                  /* 1 = nearest */
-    sl_dir_t *dirs;
-    candidate_t (*cand)[MAX_CANDIDATES];
-    int *n_cand;
-} near_ctx_t;
+    int64_t journey;
+    time_t  t;
+    uint8_t dir_code, line;
+    bool    stop;
+} listing_t;
+
+typedef struct {
+    listing_t e[CACHE_MAX];
+    int n;
+} station_cache_t;
+
+static station_cache_t cache[2][SL_UPSTREAM + 1];   /* [side][k], k = 1 nearest */
 
 static void on_near(void *ctx, const departure_t *d)
 {
-    near_ctx_t *n = ctx;
-    if (!d->journey) {
-        return;
+    station_cache_t *c = ctx;
+    if (d->journey && c->n < CACHE_MAX) {
+        c->e[c->n++] = (listing_t){
+            d->journey, dep_time(d), d->dir_code, d->line, is_at_stop(d->state),
+        };
     }
-    int in = n->side, out = !n->side;
-    time_t t = dep_time(d);
-    bool stop = is_at_stop(d->state);
-    if (d->dir_code == direction_code[in]) {
+}
+
+/* Use one listing from the station `k` away from home on `side`. */
+static void apply_listing(const metro_group_t *g, int side, int k, const listing_t *l,
+                          sl_dir_t *dirs, candidate_t (*cand)[MAX_CANDIDATES], int *n_cand)
+{
+    int in = side, out = !side;
+    if (l->dir_code == direction_code[in]) {
         /* On its way in: which neighbours it has yet to reach. */
-        sl_dir_t *dir = &n->dirs[in];
+        sl_dir_t *dir = &dirs[in];
         for (int i = 0; i < dir->n; i++) {
-            if (dir->trains[i].journey == d->journey) {
-                dir->trains[i].t[n->k] = t;
-                if (stop) dir->trains[i].at_stop |= 1 << n->k;
+            if (dir->trains[i].journey == l->journey) {
+                dir->trains[i].t[k] = l->t;
+                if (l->stop) dir->trains[i].at_stop |= 1 << k;
             }
         }
-    } else if (d->dir_code == direction_code[out] && on_group(n->g, d->line)) {
+    } else if (l->dir_code == direction_code[out] && on_group(g, l->line)) {
         /* On its way out, past home: these stations are downstream. */
         candidate_t *c = NULL;
-        for (int i = 0; i < n->n_cand[out]; i++) {
-            if (n->cand[out][i].journey == d->journey) c = &n->cand[out][i];
+        for (int i = 0; i < n_cand[out]; i++) {
+            if (cand[out][i].journey == l->journey) c = &cand[out][i];
         }
-        if (!c && n->n_cand[out] < MAX_CANDIDATES) {
-            c = &n->cand[out][n->n_cand[out]++];
+        if (!c && n_cand[out] < MAX_CANDIDATES) {
+            c = &cand[out][n_cand[out]++];
             memset(c, 0, sizeof(*c));
-            c->journey = d->journey;
-            c->line = d->line;
+            c->journey = l->journey;
+            c->line = l->line;
         }
         if (c) {
-            c->t[n->k] = t;
-            if (stop) c->at_stop |= 1 << n->k;
+            c->t[k] = l->t;
+            if (l->stop) c->at_stop |= 1 << k;
         }
     }
 }
@@ -311,7 +334,9 @@ static void pick_departed(const sl_config_t *cfg, const metro_group_t *g, int di
     }
 }
 
-static bool poll_all(esp_http_client_handle_t client, const sl_config_t *cfg, sl_dir_t *dirs)
+/* Fetch home and the nearest neighbours; with `full`, all neighbours. */
+static bool poll_all(esp_http_client_handle_t client, const sl_config_t *cfg, sl_dir_t *dirs,
+                     bool full)
 {
     const metro_group_t *g = &metro_groups[cfg->group];
     char url[160];
@@ -326,19 +351,31 @@ static bool poll_all(esp_http_client_handle_t client, const sl_config_t *cfg, sl
             return false;
         }
     }
-
-    static candidate_t cand[2][MAX_CANDIDATES];
-    int n_cand[2] = { 0, 0 };
     for (int side = 0; side < 2; side++) {
-        for (int k = 1; k <= cfg->n_up[side]; k++) {
-            near_ctx_t n = { g, side, k, dirs, cand, n_cand };
+        for (int k = 1; k <= cfg->n_up[side] && (k == 1 || full); k++) {
+            station_cache_t *c = &cache[side][k];
+            c->n = 0;
             snprintf(url, sizeof(url), API_NEAR, cfg->up[side][k - 1]);
-            if (!fetch(client, url, on_near, &n)) {
+            if (!fetch(client, url, on_near, c)) {
                 return false;
             }
         }
     }
+
+    static candidate_t cand[2][MAX_CANDIDATES];
+    int n_cand[2] = { 0, 0 };
     time_t now = time(NULL);
+    for (int side = 0; side < 2; side++) {
+        for (int k = 1; k <= cfg->n_up[side]; k++) {
+            for (int i = 0; i < cache[side][k].n; i++) {
+                const listing_t *l = &cache[side][k].e[i];
+                if (k > 1 && difftime(l->t, now) < -CACHE_STALE_S) {
+                    continue;
+                }
+                apply_listing(g, side, k, l, dirs, cand, n_cand);
+            }
+        }
+    }
     for (int dir = 0; dir < 2; dir++) {
         pick_departed(cfg, g, dir, &dirs[dir], cand[dir], n_cand[dir], now);
     }
@@ -376,8 +413,17 @@ static void poll_task(void *arg)
         }
         sl_config_t cfg;
         sl_get_config(&cfg);
+        /* Everything on a new station, then the outer neighbours every
+         * SLOW_EVERY:th poll. */
+        static uint32_t polled_generation;
+        static int round;
+        bool full = cfg.generation != polled_generation || round % SLOW_EVERY == 0;
         int64_t t0 = esp_log_timestamp();
-        bool ok = poll_all(client, &cfg, next.dir);
+        bool ok = poll_all(client, &cfg, next.dir, full);
+        if (ok) {
+            polled_generation = cfg.generation;
+            round = full ? 1 : round + 1;
+        }
         if (ok) {
             next.updated = time(NULL);
             ever_succeeded = true;
@@ -388,8 +434,9 @@ static void poll_task(void *arg)
                 state = next;
             }
             xSemaphoreGive(state_mutex);
-            ESP_LOGI(TAG, "%s: updated in %lld ms, %d + %d trains, %d + %d departed",
-                     metro_station_name(cfg.home), esp_log_timestamp() - t0,
+            ESP_LOGI(TAG, "%s: %s update in %lld ms, %d + %d trains, %d + %d departed",
+                     metro_station_name(cfg.home), full ? "full" : "near",
+                     esp_log_timestamp() - t0,
                      next.dir[0].n, next.dir[1].n, next.dir[0].n_dep, next.dir[1].n_dep);
         } else {
             /* Drop the connection so the next poll starts clean. */

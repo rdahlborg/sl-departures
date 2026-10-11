@@ -17,9 +17,11 @@ menu "SL Departures Configuration"
         help
             Europe/Stockholm. SL's API returns local times, so this must match.
     config SL_POLL_SECONDS
-        int "Seconds between API polls"
-        default 20
+        int "Seconds between polls of home and the nearest stations"
+        default 10
         range 10 300
+        help
+            Stations further out are polled every third time.
     config INSTALLER_URL
         string "Web installer address shown when Wi-Fi is not set up"
         default "rdahlborg.github.io/sl-departures"
