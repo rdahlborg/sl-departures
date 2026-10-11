@@ -79,11 +79,21 @@ static void send_result(uint8_t cmd, const char *const *strs, int n)
     send_packet(TYPE_RPC_RESULT, data, pos);
 }
 
+/* The settings page on the home network. ESP Web Tools shows it as a
+ * "Visit device" button, where line and station are chosen. */
+static void send_url_result(uint8_t cmd)
+{
+    char url[32];
+    snprintf(url, sizeof(url), "http://%s/", board_wifi_ip());
+    const char *urls[] = { url };
+    send_result(cmd, urls, board_wifi_ip()[0] ? 1 : 0);
+}
+
 static void send_state(void)
 {
     if (board_wifi_connected()) {
         send_byte(TYPE_STATE, STATE_PROVISIONED);
-        send_result(CMD_CURRENT_STATE, NULL, 0);
+        send_url_result(CMD_CURRENT_STATE);
     } else {
         send_byte(TYPE_STATE, STATE_READY);
     }
@@ -112,7 +122,7 @@ static void wifi_settings(const uint8_t *p, uint8_t len)
     send_byte(TYPE_STATE, STATE_PROVISIONING);
     if (board_wifi_provision(ssid, pass, PROVISION_TIMEOUT_MS)) {
         send_byte(TYPE_STATE, STATE_PROVISIONED);
-        send_result(CMD_WIFI_SETTINGS, NULL, 0);
+        send_url_result(CMD_WIFI_SETTINGS);
     } else {
         send_byte(TYPE_ERROR, ERR_UNABLE_CONNECT);
         send_byte(TYPE_STATE, STATE_READY);
