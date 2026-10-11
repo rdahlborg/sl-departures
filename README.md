@@ -36,7 +36,11 @@ Pick **Mobil…** in the line list. The board shows a QR code for its settings
 page, `http://<board address>/`, which is also reachable as
 `http://sl-departures-xxxx.local/` (the suffix matches the setup hotspot's
 name). In the web installer, connecting to a board that has Wi-Fi offers
-**Visit device**, which opens the same page. Scan it with a phone on the same Wi-Fi and
+**Visit device**, which opens the same page.
+
+On a Mac, if that page can't be reached (`ERR_ADDRESS_UNREACHABLE`), allow
+Chrome under System Settings → Privacy & Security → **Local Network** and
+restart Chrome. Scan it with a phone on the same Wi-Fi and
 choose the line and station. The board switches at once and closes the code.
 Anyone on your network can open this page and change the station, but not
 the Wi-Fi.
