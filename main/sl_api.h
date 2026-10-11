@@ -7,6 +7,7 @@
 /* Max number of stations queried on each side of the home station. */
 #define SL_UPSTREAM      5
 #define SL_MAX_TRAINS    6
+#define SL_MAX_DEPARTED  3
 
 /* Index into the per-direction arrays. Rightbound trains travel towards
  * higher route indices (SL direction_code 2), leftbound the other way. */
@@ -40,12 +41,27 @@ typedef struct {
     /* Furthest upstream station on the map that this train's line also
      * calls at. Beyond it the train is on another branch. */
     uint8_t reach;
+    /* Has left home: it is drawn as a departed train instead. */
+    bool left;
 } sl_train_t;
+
+/* A train that has left home and is on its way out. t[k] is its expected
+ * time at the k:th station after home (k = 1 nearest); 0 once passed. */
+typedef struct {
+    int64_t journey;
+    uint8_t line;
+    time_t  t[SL_UPSTREAM + 1];
+    uint8_t at_stop;
+} sl_departed_t;
 
 typedef struct {
     sl_train_t trains[SL_MAX_TRAINS];
     int n;
     uint8_t n_up;
+    /* Trains in this direction that have passed home, nearest first. */
+    sl_departed_t departed[SL_MAX_DEPARTED];
+    int n_dep;
+    uint8_t n_down;
 } sl_dir_t;
 
 typedef struct {
@@ -83,3 +99,7 @@ bool sl_snapshot(sl_state_t *out);
  * nearest upstream station, 1.5 = halfway between stations 1 and 2).
  * Returns a negative value if the train should not be drawn. */
 float sl_train_position(const sl_train_t *tr, int n_up, time_t now);
+
+/* Same for a train that has left: 0 = at home, 1 = at the first station
+ * after home. Negative if it should not be drawn. */
+float sl_departed_position(const sl_departed_t *d, int n_down, time_t now);

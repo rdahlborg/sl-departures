@@ -45,14 +45,17 @@ static lv_obj_t *line_badge, *line_badge_label;
 static lv_obj_t *clock_label;
 static lv_obj_t *status_dot;
 static lv_obj_t *map_layer;
-static lv_obj_t *markers[2][SL_MAX_TRAINS];
-static lv_obj_t *marker_labels[2][SL_MAX_TRAINS];
+/* Markers 0..SL_MAX_TRAINS-1 are trains on their way in, the rest trains
+ * that have left. */
+#define N_MARKERS (SL_MAX_TRAINS + SL_MAX_DEPARTED)
+static lv_obj_t *markers[2][N_MARKERS];
+static lv_obj_t *marker_labels[2][N_MARKERS];
 /* Track drawn from the last station a train passed up to the train. */
-static lv_obj_t *trails[2][SL_MAX_TRAINS];
+static lv_obj_t *trails[2][N_MARKERS];
 /* Where each marker is drawn, easing towards the computed position, and
  * which train it shows, so a marker handed to another train jumps. */
-static float marker_x[2][SL_MAX_TRAINS];
-static int64_t marker_journey[2][SL_MAX_TRAINS];
+static float marker_x[2][N_MARKERS];
+static int64_t marker_journey[2][N_MARKERS];
 static lv_obj_t *col_header[2];
 static lv_obj_t *placeholder;
 static lv_obj_t *picker, *picker_roller, *picker_title;
@@ -183,13 +186,13 @@ static void build_map(const sl_config_t *c)
     /* Trails first, so they are drawn under the trains. */
     for (int dir = 0; dir < 2; dir++) {
         int y = dir == SL_RIGHTBOUND ? TRACK_R_Y : TRACK_L_Y;
-        for (int i = 0; i < SL_MAX_TRAINS; i++) {
+        for (int i = 0; i < N_MARKERS; i++) {
             trails[dir][i] = box(map_layer, 0, y - 1, 0, 3, line_color, 1);
             lv_obj_set_hidden(trails[dir][i], true);
         }
     }
     for (int dir = 0; dir < 2; dir++) {
-        for (int i = 0; i < SL_MAX_TRAINS; i++) {
+        for (int i = 0; i < N_MARKERS; i++) {
             marker_journey[dir][i] = 0;
             lv_obj_t *m = box(map_layer, 0, 0, 22, 14, line_color, 4);
             lv_obj_set_style_border_color(m, lv_color_hex(COL_TEXT), 0);
@@ -283,14 +286,14 @@ static void format_mins(char *buf, size_t len, const sl_train_t *tr, time_t now)
  * station it left; at a platform it has neither, and its border blinks
  * while it is boarding. Markers ease towards their position, so they glide
  * rather than jump when new data arrives. */
-static void draw_train(int dir, int i, const sl_train_t *tr, float pos)
+static void draw_train(int dir, int i, int64_t journey, int line, float pos, bool boarding)
 {
     int y = dir == SL_RIGHTBOUND ? TRACK_R_Y : TRACK_L_Y;
     float target = map_xf(dir, pos);
     float *x = &marker_x[dir][i];
-    if (marker_journey[dir][i] != tr->journey || fabsf(target - *x) > MAP_SPACING) {
+    if (marker_journey[dir][i] != journey || fabsf(target - *x) > MAP_SPACING) {
         *x = target;
-        marker_journey[dir][i] = tr->journey;
+        marker_journey[dir][i] = journey;
     } else {
         *x += (target - *x) * 0.25f;
     }
@@ -301,16 +304,16 @@ static void draw_train(int dir, int i, const sl_train_t *tr, float pos)
     lv_obj_set_size(m, w, 14);
     lv_obj_set_pos(m, (int)(*x + 0.5f) - w / 2, y - 7);
     if (!moving) {
-        lv_label_set_text_fmt(marker_labels[dir][i], "%d", tr->line);
+        lv_label_set_text_fmt(marker_labels[dir][i], "%d", line);
     } else if (dir == SL_RIGHTBOUND) {
-        lv_label_set_text_fmt(marker_labels[dir][i], "%d→", tr->line);
+        lv_label_set_text_fmt(marker_labels[dir][i], "%d→", line);
     } else {
-        lv_label_set_text_fmt(marker_labels[dir][i], "←%d", tr->line);
+        lv_label_set_text_fmt(marker_labels[dir][i], "←%d", line);
     }
     lv_obj_center(marker_labels[dir][i]);
 
     /* Boarding: blink the border once a second. */
-    bool boarding = !moving && (tr->at_stop & (1 << (int)pos));
+    boarding = boarding && !moving;
     lv_obj_set_style_border_opa(m, boarding && (lv_tick_get() / 500) % 2 ? LV_OPA_TRANSP
                                                                         : LV_OPA_COVER, 0);
 
@@ -367,11 +370,28 @@ static void update_cb(lv_timer_t *t)
     for (int dir = 0; dir < 2; dir++) {
         const sl_dir_t *d = &st.dir[dir];
 
-        for (int i = 0; i < SL_MAX_TRAINS; i++) {
-            const sl_train_t *tr = &d->trains[i];
-            float pos = have && i < d->n ? sl_train_position(tr, d->n_up, now) : -1;
+        for (int i = 0; i < N_MARKERS; i++) {
+            /* Positions are stations from home: positive on the side a
+             * train arrives from, negative once it has left. */
+            float pos = -1;
+            int64_t journey = 0;
+            int line = 0;
+            uint8_t stops = 0;
+            if (!have) {
+                /* nothing to draw */
+            } else if (i < SL_MAX_TRAINS) {
+                const sl_train_t *tr = &d->trains[i];
+                if (i < d->n && !tr->left) {
+                    pos = sl_train_position(tr, d->n_up, now);
+                    journey = tr->journey, line = tr->line, stops = tr->at_stop;
+                }
+            } else if (i - SL_MAX_TRAINS < d->n_dep) {
+                const sl_departed_t *dp = &d->departed[i - SL_MAX_TRAINS];
+                pos = sl_departed_position(dp, d->n_down, now);
+                journey = dp->journey, line = dp->line, stops = dp->at_stop;
+            }
             /* Allow half a spacing past the last drawn station so trains
-             * slide in from the edge. */
+             * slide in and out at the edges. */
             bool show = pos >= 0 && pos <= MAP_SHOWN + 0.6f;
             lv_obj_set_hidden(markers[dir][i], !show);
             lv_obj_set_hidden(trails[dir][i], true);
@@ -379,7 +399,8 @@ static void update_cb(lv_timer_t *t)
                 marker_journey[dir][i] = 0;
                 continue;
             }
-            draw_train(dir, i, tr, pos);
+            bool boarding = pos == floorf(pos) && (stops & (1 << (int)pos));
+            draw_train(dir, i, journey, line, i < SL_MAX_TRAINS ? pos : -pos, boarding);
         }
 
         /* Departures list: skip trains that have already left. */
