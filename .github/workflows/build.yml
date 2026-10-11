@@ -32,7 +32,10 @@ jobs:
           VERSION=$(git describe --tags --always)
           mkdir -p _site
           cp site/index.html screenshots/*.png _site/
-          cp build/firmware.bin _site/firmware.bin
+          # Separate parts rather than the merged image, so updates leave
+          # the NVS partition (Wi-Fi details, chosen station) untouched.
+          cp build/bootloader/bootloader.bin build/partition_table/partition-table.bin \
+             build/sl-departures.bin _site/
           sed "s/__VERSION__/$VERSION/" site/manifest.json > _site/manifest.json
 
       - uses: actions/upload-pages-artifact@v3
