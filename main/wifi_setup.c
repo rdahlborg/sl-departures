@@ -98,6 +98,7 @@ static void send_escaped(httpd_req_t *req, const char *s)
 
 static esp_err_t root_get(httpd_req_t *req)
 {
+    ESP_LOGI(TAG, "Setup page requested");
     setup_status_t st;
     wifi_setup_get_status(&st);
 
@@ -197,6 +198,7 @@ static esp_err_t connect_post(httpd_req_t *req)
         return httpd_resp_sendstr(req, "");
     }
 
+    ESP_LOGI(TAG, "Got network \"%s\" from the phone", ssid);
     xSemaphoreTake(mutex, portMAX_DELAY);
     strlcpy(pending_ssid, ssid, sizeof(pending_ssid));
     strlcpy(pending_pass, pass, sizeof(pending_pass));
@@ -240,6 +242,9 @@ static esp_err_t status_get(httpd_req_t *req)
  * unknown URL with a redirect makes them open the setup page by themselves. */
 static esp_err_t redirect_404(httpd_req_t *req, httpd_err_code_t err)
 {
+    char host[64] = "";
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
+    ESP_LOGI(TAG, "Redirecting %s%s to the setup page", host, req->uri);
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", PORTAL_URL "/");
     /* iOS needs a body to treat the response as a portal. */
@@ -362,6 +367,7 @@ static void try_connect(void)
     xSemaphoreGive(mutex);
 
     if (board_wifi_provision(ssid, pass, CONNECT_TIMEOUT_MS)) {
+        ESP_LOGI(TAG, "Connected to %s, closing setup", ssid);
         set_state(SETUP_DONE);
         vTaskDelay(pdMS_TO_TICKS(DONE_LINGER_MS));
         end();
@@ -408,8 +414,10 @@ static void ap_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     xSemaphoreTake(mutex, portMAX_DELAY);
     if (id == WIFI_EVENT_AP_STACONNECTED) {
         clients++;
+        ESP_LOGI(TAG, "Phone joined the hotspot (%d connected)", clients);
     } else if (id == WIFI_EVENT_AP_STADISCONNECTED && clients > 0) {
         clients--;
+        ESP_LOGI(TAG, "Phone left the hotspot (%d connected)", clients);
     }
     if (status.state == SETUP_WAITING || status.state == SETUP_PHONE) {
         status.state = clients > 0 ? SETUP_PHONE : SETUP_WAITING;
