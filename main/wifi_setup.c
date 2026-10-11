@@ -133,6 +133,19 @@ static esp_err_t root_get(httpd_req_t *req)
         httpd_resp_sendstr_chunk(req, "<script>document.getElementById('other')"
                                       ".style.display='block'</script>");
     }
+    /* Send with fetch() rather than a form post: iOS warns that a password
+     * form on a plain http page "is not secure", and in the captive portal
+     * sheet "Send Anyway" then never sends it. The response replaces the
+     * page as if it had been navigated to. */
+    httpd_resp_sendstr_chunk(req, "<script>"
+        "document.querySelector('form').onsubmit=function(e){e.preventDefault();"
+        "var b=this.querySelector('button');b.disabled=true;b.textContent='Skickar…';"
+        "fetch('/connect',{method:'POST',body:new URLSearchParams(new FormData(this))})"
+        ".then(function(r){return r.text()}).then(function(h){"
+        "document.open();document.write(h);document.close()})"
+        ".catch(function(){document.querySelector('h1').textContent='Titta på tavlan';"
+        "document.querySelector('p').textContent='Skärmen visar om anslutningen lyckades.'})}"
+        "</script>");
     httpd_resp_sendstr_chunk(req, "</main></body></html>");
     return httpd_resp_sendstr_chunk(req, NULL);
 }
