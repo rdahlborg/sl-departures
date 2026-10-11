@@ -6,9 +6,6 @@ Live Stockholm metro departures and train positions on a
 ![Brommaplan on the green line](screenshots/brommaplan.png)
 
 **Install from your browser:** https://rdahlborg.github.io/sl-departures
-(Chrome or Edge on a computer, with the board on a USB-C data cable). After
-flashing, the installer asks for your Wi-Fi details. You can also set up Wi-Fi
-later from your phone.
 
 ## Features
 
@@ -17,60 +14,98 @@ later from your phone.
 - The next two departures in each direction, with countdowns and cancellations.
 - Choose line and station with the BOOT button or from your phone. Your choice
   is remembered.
+- Set up Wi-Fi from the web installer or from your phone with a QR code.
+
+## Getting started
+
+1. Connect the board to a computer with a USB-C cable that carries data, and
+   open the [installer](https://rdahlborg.github.io/sl-departures) in Chrome or
+   Edge.
+2. Click **Install on your board**, pick the port, and install. Choose erase
+   for a first install.
+3. Set up Wi-Fi in one of two ways:
+   - **In the installer:** enter your network and password when it asks, then
+     click **Visit device** to choose the line and station.
+   - **From your phone:** close the installer's Wi-Fi dialog. The board shows
+     a QR code (see [Wi-Fi setup from a phone](#wi-fi-setup-from-a-phone)).
+
+The board starts on Brommaplan on the green line until you pick another station.
+
+## Using the button
+
+Everything is done with the **BOOT** button. RESET just restarts the board.
 
 | Where | Press | Double press | Hold |
 |---|---|---|---|
-| Departure board | next station | previous station | choose line |
-| Line list | next line | previous line | select |
+| Departure board | next station | previous station | open the line list |
+| Line list | next entry | previous entry | select |
 | Station list | next station | previous station | select |
 | Phone QR code | close | close | close |
 | Wi-Fi setup | | | cancel |
 
-The line list ends with two extra entries: **Mobil…** and **Wi-Fi…**.
+The line list has the three lines followed by **Mobil…** (choose the station
+from a phone) and **Wi-Fi…** (set up Wi-Fi from a phone). The lists close by
+themselves after 30 seconds without a press.
 
 ## Choosing the station from a phone
 
 ![QR code for the settings page](screenshots/phone-settings.png)
 
 Pick **Mobil…** in the line list. The board shows a QR code for its settings
-page, `http://<board address>/`, which is also reachable as
-`http://sl-departures-xxxx.local/` (the suffix matches the setup hotspot's
-name). In the web installer, connecting to a board that has Wi-Fi offers
+page. Scan it with a phone on the same Wi-Fi and choose the line and station.
+The board switches at once and closes the code.
+
+The page is at `http://<board address>/`, and also at
+`http://sl-departures-xxxx.local/`, where `xxxx` matches the setup hotspot's
+name. In the web installer, connecting to a board that has Wi-Fi offers
 **Visit device**, which opens the same page.
 
-On a Mac, if that page can't be reached (`ERR_ADDRESS_UNREACHABLE`), allow
-Chrome under System Settings → Privacy & Security → **Local Network** and
-restart Chrome. Scan it with a phone on the same Wi-Fi and
-choose the line and station. The board switches at once and closes the code.
-Anyone on your network can open this page and change the station, but not
-the Wi-Fi.
+Anyone on your network can open this page and change the station, but not the
+Wi-Fi.
 
 ## Wi-Fi setup from a phone
 
 ![Wi-Fi setup screen](screenshots/wifi-setup.png)
 
-On first boot, or from **Wi-Fi…** at the end of the line list, the board
-starts a hotspot and shows a QR code:
+On first boot, or from **Wi-Fi…** in the line list, the board starts a hotspot
+and shows a QR code:
 
 1. Scan the code with the phone camera to join the hotspot. Its password is
    random each time and is included in the code.
 2. A setup page opens. If it doesn't, the screen shows a second code for
    `http://192.168.4.1`. Pick your network, enter the password, and choose
-   the line and station to show.
-3. The board shows whether it connected. A wrong password leaves the
-   previous network in place.
+   the line and station.
+3. The board shows whether it connected and closes the hotspot. A wrong
+   password leaves the previous network in place.
 
-The web installer can also set Wi-Fi over USB (*Change Wi-Fi*).
+If setup was opened from the menu and nobody joins, the hotspot closes after
+10 minutes.
+
+## Troubleshooting
+
+- **The installer's port list is empty, or *Visit device* says the site can't
+  be reached (`ERR_ADDRESS_UNREACHABLE`) on a Mac:** allow Chrome under System
+  Settings → Privacy & Security → **Local Network**, then quit and reopen
+  Chrome.
+- **The installer says the port is busy:** another tab or program has the
+  board open. Close other installer tabs or unplug and replug the board.
+- **The setup page doesn't open after joining the hotspot:** scan the second
+  QR code on the screen, or open `http://192.168.4.1` in the phone's browser.
+- **The clock shows `--:--` or the dot next to it is orange or red:** red means
+  no Wi-Fi, orange means the departure data is more than 90 seconds old.
 
 ## How trains are placed
 
 SL has no public vehicle positions for the metro. Every departure from the
 [SL Transport API](https://www.trafiklab.se/api/other-apis/sl/transport/) does
-carry a journey ID shared across stations, though. So the board also fetches the
-five stations on each side of yours. The furthest one that still lists a train
-is where that train stops next. Its expected arrival there, and the time between
-stations, place it along the track. The API needs no key, and a poll every 20
-seconds takes 12 requests.
+carry a journey ID shared across stations, though. So the board also fetches up
+to five stations on each side of yours. The furthest one that still lists a
+train is where that train stops next. Its expected arrival there, and the time
+between stations, place it along the track. The API needs no key; a poll every
+20 seconds takes up to 12 requests.
+
+Where lines split, the map follows one branch. Trains from the other branch
+appear in the departure list and join the map where the branches meet.
 
 ## Building
 
@@ -81,8 +116,8 @@ idf.py set-target esp32c6
 idf.py -p PORT flash monitor
 ```
 
-Then set Wi-Fi from the web installer (*Change Wi-Fi*), or, for development
-builds, create `secrets.defaults`. It is git-ignored and only used when no
+Then set up Wi-Fi from the web installer or a phone. For development builds you
+can instead create `secrets.defaults`. It is git-ignored and only used when no
 network has been saved:
 
 ```
@@ -94,21 +129,25 @@ Other options (timezone, poll interval, screen rotation) are under
 *SL Departures Configuration* in `idf.py menuconfig`.
 
 Pushing to `main` makes GitHub Actions build the firmware and publish the
-installer page. Pushing a `v*` tag also attaches `firmware.bin` to the release.
+installer page. Pushing a `v*` tag also attaches a merged `firmware.bin` to the
+release, for flashing with `esptool write-flash 0 firmware.bin` (this replaces
+saved Wi-Fi and station).
 
 ### Layout
 
 | Path | |
 |---|---|
 | `main/sl_api.c` | Polls the API, works out train positions |
-| `main/ui.c` | LVGL screen: header, line map, departures, picker |
+| `main/ui.c` | LVGL screen: header, line map, departures, lists, QR screens |
 | `main/controls.c` | BOOT button gestures, saved station |
-| `main/board.c` | Display, Wi-Fi, time sync |
+| `main/board.c` | Display, Wi-Fi, mDNS name, time sync |
 | `main/wifi_setup.c` | Phone setup: hotspot, captive portal DNS, connecting |
 | `main/web.c` | Web pages: Wi-Fi setup portal, line and station settings |
-| `main/improv.c`, `main/serial.c` | Improv Wi-Fi setup for the web installer, debug keys |
-| `components/dns_server` | Captive portal DNS, from the ESP-IDF examples (CC0) |
+| `main/improv.c`, `main/serial.c` | Improv Wi-Fi for the web installer, debug keys |
+| `main/screenshot.c` | Screenshots over USB serial |
 | `main/metro_data.c` | Station order per line (generated) |
+| `main/fonts/` | Montserrat with Swedish letters (generated) |
+| `components/dns_server` | Captive portal DNS, from the ESP-IDF examples (CC0) |
 | `tools/` | Generators for the station table and fonts, screenshot grabber |
 | `site/` | Web installer page |
 
@@ -120,9 +159,21 @@ installer page. Pushing a `v*` tag also attaches `firmware.bin` to the release.
 ### Regenerating station data
 
 ```sh
-python tools/routes.py DIR      # needs sites_x.json and sp.json from the API in DIR
-python tools/order.py DIR
-python tools/gen_metro_data.py DIR/order.json main/metro_data.c
+mkdir data
+curl -o data/sites_x.json 'https://transport.integration.sl.se/v1/sites?expand=true'
+curl -o data/sp.json https://transport.integration.sl.se/v1/stop-points
+python tools/routes.py data      # fetches departures from every metro station
+python tools/order.py data       # writes data/order.json
+python tools/gen_metro_data.py data/order.json main/metro_data.c
+```
+
+Run it during the day, when every line has trains. `tools/order.json` is the
+copy the current table was generated from.
+
+### Regenerating fonts
+
+```sh
+tools/gen_fonts.sh DIR   # DIR holds Montserrat-Medium, -SemiBold and -Bold .ttf
 ```
 
 ## Credits
@@ -132,7 +183,8 @@ python tools/gen_metro_data.py DIR/order.json main/metro_data.c
 - [Montserrat](https://github.com/JulietaUla/Montserrat) font, SIL Open Font
   License 1.1 (`main/fonts/OFL.txt`).
 - [LVGL](https://lvgl.io/), [ESP Web Tools](https://esphome.github.io/esp-web-tools/),
-  [Improv Wi-Fi](https://www.improv-wifi.com/).
+  [Improv Wi-Fi](https://www.improv-wifi.com/), and Espressif's button, mDNS
+  and LVGL port components.
 
 ## License
 
