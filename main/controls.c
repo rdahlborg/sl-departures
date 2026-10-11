@@ -4,8 +4,10 @@
  *   line picker      click: next line      double: previous   hold: choose
  *   station picker   click: next station   double: previous   hold: choose
  *   Wi-Fi setup      hold: cancel
+ *   phone QR code    any press: close
  *
- * The line picker ends with a "Wi-Fi…" entry that starts phone setup.
+ * The line picker ends with "Mobil…", which shows a QR code for the
+ * settings page, and "Wi-Fi…", which starts phone setup.
  *
  * The picker closes without changes after PICKER_TIMEOUT_MS of inactivity.
  */
@@ -29,7 +31,7 @@
 
 static const char *TAG = "controls";
 
-typedef enum { MODE_BOARD, MODE_PICK_LINE, MODE_PICK_STATION } ui_mode_t;
+typedef enum { MODE_BOARD, MODE_PICK_LINE, MODE_PICK_STATION, MODE_PHONE } ui_mode_t;
 
 static ui_mode_t mode = MODE_BOARD;
 static int pick_group;
@@ -76,7 +78,7 @@ static int station_index(const metro_group_t *g, uint16_t site)
     return -1;
 }
 
-static void select_station(int group, uint16_t site)
+void controls_select(int group, uint16_t site)
 {
     sl_select(group, site);
     save(group, site);
@@ -90,11 +92,13 @@ static void step_station(int delta)
     const metro_group_t *g = &metro_groups[c.group];
     int i = station_index(g, c.home);
     i = ((i < 0 ? 0 : i) + delta + g->n_stations) % g->n_stations;
-    select_station(c.group, g->stations[i]);
+    controls_select(c.group, g->stations[i]);
 }
 
-/* The entry after the line groups in the line picker. */
-#define PICK_WIFI METRO_N_GROUPS
+/* Entries after the line groups in the line picker. */
+#define PICK_PHONE  METRO_N_GROUPS
+#define PICK_WIFI   (METRO_N_GROUPS + 1)
+#define PICK_COUNT  (METRO_N_GROUPS + 2)
 
 static void show_line_picker(void)
 {
@@ -103,8 +107,9 @@ static void show_line_picker(void)
         strlcat(options, metro_groups[i].name, sizeof(options));
         strlcat(options, "\n", sizeof(options));
     }
-    strlcat(options, "Wi-Fi…", sizeof(options));
-    ui_picker_show("Välj linje", options, pick_index, metro_groups[pick_index].color);
+    strlcat(options, "Mobil…\nWi-Fi…", sizeof(options));
+    ui_picker_show("Välj linje", options, pick_index,
+                   metro_groups[pick_index < METRO_N_GROUPS ? pick_index : 0].color);
 }
 
 static void show_station_picker(void)
@@ -120,7 +125,7 @@ static void show_station_picker(void)
 
 static int picker_count(void)
 {
-    return mode == MODE_PICK_LINE ? METRO_N_GROUPS + 1 : metro_groups[pick_group].n_stations;
+    return mode == MODE_PICK_LINE ? PICK_COUNT : metro_groups[pick_group].n_stations;
 }
 
 typedef enum { EV_NEXT, EV_PREV, EV_HOLD, EV_TIMEOUT } event_t;
@@ -133,6 +138,10 @@ static void handle(event_t ev)
             wifi_setup_stop();
         }
         return;
+    }
+    /* The phone QR code closes itself once a station is chosen. */
+    if (mode == MODE_PHONE && !ui_phone_visible()) {
+        mode = MODE_BOARD;
     }
     if (ev == EV_TIMEOUT) {
         if (mode != MODE_BOARD) {
@@ -147,6 +156,13 @@ static void handle(event_t ev)
     }
 
     switch (mode) {
+    case MODE_PHONE:
+        if (ev != EV_TIMEOUT) {
+            ui_phone_hide();
+            mode = MODE_BOARD;
+        }
+        break;
+
     case MODE_BOARD:
         if (ev == EV_NEXT || ev == EV_PREV) {
             step_station(ev == EV_NEXT ? 1 : -1);
@@ -167,6 +183,11 @@ static void handle(event_t ev)
             int n = picker_count();
             pick_index = (pick_index + (ev == EV_NEXT ? 1 : -1) + n) % n;
             ui_picker_select(pick_index);
+        } else if (mode == MODE_PICK_LINE && pick_index == PICK_PHONE) {
+            esp_timer_stop(timeout_timer);
+            ui_picker_hide();
+            mode = MODE_PHONE;
+            ui_phone_show();
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_WIFI) {
             esp_timer_stop(timeout_timer);
             ui_picker_hide();
@@ -185,7 +206,7 @@ static void handle(event_t ev)
             esp_timer_stop(timeout_timer);
             ui_picker_hide();
             mode = MODE_BOARD;
-            select_station(pick_group, metro_groups[pick_group].stations[pick_index]);
+            controls_select(pick_group, metro_groups[pick_group].stations[pick_index]);
         }
         break;
     }

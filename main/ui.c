@@ -48,6 +48,8 @@ static lv_obj_t *col_header[2];
 static lv_obj_t *placeholder;
 static lv_obj_t *picker, *picker_roller, *picker_title;
 static lv_obj_t *setup_panel, *setup_qr, *setup_text, *setup_note;
+static lv_obj_t *phone_panel, *phone_qr, *phone_text;
+static uint32_t phone_generation;   /* station shown when the QR code opened */
 
 typedef struct {
     lv_obj_t *badge, *badge_label, *dest, *mins;
@@ -255,6 +257,10 @@ static void update_cb(lv_timer_t *t)
     if (cfg.generation != shown.generation) {
         build_map(&cfg);
     }
+    /* A station was chosen on the phone: show it. */
+    if (ui_phone_visible() && cfg.generation != phone_generation) {
+        ui_phone_hide();
+    }
 
     if (board_time_valid()) {
         struct tm tm;
@@ -408,6 +414,57 @@ static void update_setup(void)
     lv_label_set_text(setup_note, buf);
 }
 
+static void build_phone(lv_obj_t *scr)
+{
+    phone_panel = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
+    phone_qr = lv_qrcode_create(phone_panel);
+    lv_qrcode_set_size(phone_qr, 132);
+    lv_qrcode_set_dark_color(phone_qr, lv_color_black());
+    lv_qrcode_set_light_color(phone_qr, lv_color_white());
+    lv_qrcode_set_quiet_zone(phone_qr, true);
+    lv_obj_set_pos(phone_qr, 12, 20);
+
+    lv_obj_t *title = text(phone_panel, &sl_font_16, COL_TEXT, "Välj i mobilen");
+    lv_obj_set_pos(title, 158, 10);
+    phone_text = text(phone_panel, &sl_font_12, COL_TEXT, "");
+    lv_obj_set_width(phone_text, LCD_H_RES - 166);
+    lv_obj_set_pos(phone_text, 158, 34);
+    lv_obj_t *hint = text(phone_panel, &sl_font_12, COL_DIM, "Tryck på knappen: stäng");
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 158, -8);
+    lv_obj_set_hidden(phone_panel, true);
+}
+
+void ui_phone_show(void)
+{
+    const char *ip = board_wifi_ip();
+    char buf[160];
+    if (ip[0]) {
+        snprintf(buf, sizeof(buf), "http://%s/", ip);
+        lv_qrcode_update(phone_qr, buf, strlen(buf));
+        lv_obj_set_hidden(phone_qr, false);
+        snprintf(buf, sizeof(buf), "Skanna koden för att välja linje och station.\n\n"
+                                   "Mobilen måste vara på samma Wi-Fi.\n%s", ip);
+    } else {
+        lv_obj_set_hidden(phone_qr, true);
+        snprintf(buf, sizeof(buf), "Tavlan är inte ansluten till Wi-Fi.");
+    }
+    lv_label_set_text(phone_text, buf);
+    sl_config_t cfg;
+    sl_get_config(&cfg);
+    phone_generation = cfg.generation;
+    lv_obj_set_hidden(phone_panel, false);
+}
+
+void ui_phone_hide(void)
+{
+    lv_obj_set_hidden(phone_panel, true);
+}
+
+bool ui_phone_visible(void)
+{
+    return !lv_obj_is_hidden(phone_panel);
+}
+
 static void build_picker(lv_obj_t *scr)
 {
     picker = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
@@ -478,6 +535,7 @@ void ui_init(void)
 
     build_list(scr);
     build_picker(scr);
+    build_phone(scr);
     build_setup(scr);
 
     update_cb(NULL);

@@ -1,4 +1,5 @@
 /* Board support for Waveshare ESP32-C6-LCD-1.47: display, Wi-Fi, SNTP. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -42,6 +43,7 @@ static volatile bool wifi_configured;
 static volatile bool wifi_paused;
 static volatile bool wifi_hold;
 static volatile int fail_count;
+static char wifi_ip[16];
 static EventGroupHandle_t wifi_events;
 
 lv_display_t *board_display_init(void)
@@ -144,6 +146,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = data;
         ESP_LOGI(TAG, "Got IP " IPSTR, IP2STR(&ev->ip_info.ip));
+        snprintf(wifi_ip, sizeof(wifi_ip), IPSTR, IP2STR(&ev->ip_info.ip));
         wifi_connected = true;
         fail_count = 0;
         xEventGroupSetBits(wifi_events, BIT_GOT_IP);
@@ -195,6 +198,11 @@ void board_wifi_init(void)
 bool board_wifi_connected(void)
 {
     return wifi_connected;
+}
+
+const char *board_wifi_ip(void)
+{
+    return wifi_connected ? wifi_ip : "";
 }
 
 bool board_wifi_configured(void)

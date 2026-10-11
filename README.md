@@ -15,14 +15,28 @@ later from your phone.
 - Every station on the green, red and blue lines (10, 11, 13, 14, 17, 18, 19).
 - Line map with four stations each side, with trains placed from live data.
 - The next two departures in each direction, with countdowns and cancellations.
-- Choose line and station with the BOOT button. Your choice is remembered.
+- Choose line and station with the BOOT button or from your phone. Your choice
+  is remembered.
 
 | Where | Press | Double press | Hold |
 |---|---|---|---|
 | Departure board | next station | previous station | choose line |
 | Line list | next line | previous line | select |
 | Station list | next station | previous station | select |
+| Phone QR code | close | close | close |
 | Wi-Fi setup | | | cancel |
+
+The line list ends with two extra entries: **Mobil…** and **Wi-Fi…**.
+
+## Choosing the station from a phone
+
+![QR code for the settings page](screenshots/phone-settings.png)
+
+Pick **Mobil…** in the line list. The board shows a QR code for its settings
+page, `http://<board address>/`. Scan it with a phone on the same Wi-Fi and
+choose the line and station. The board switches at once and closes the code.
+Anyone on your network can open this page and change the station, but not
+the Wi-Fi.
 
 ## Wi-Fi setup from a phone
 
@@ -34,7 +48,8 @@ starts a hotspot and shows a QR code:
 1. Scan the code with the phone camera to join the hotspot. Its password is
    random each time and is included in the code.
 2. A setup page opens. If it doesn't, the screen shows a second code for
-   `http://192.168.4.1`. Pick your network and enter the password.
+   `http://192.168.4.1`. Pick your network, enter the password, and choose
+   the line and station to show.
 3. The board shows whether it connected. A wrong password leaves the
    previous network in place.
 
@@ -82,7 +97,8 @@ installer page. Pushing a `v*` tag also attaches `firmware.bin` to the release.
 | `main/ui.c` | LVGL screen: header, line map, departures, picker |
 | `main/controls.c` | BOOT button gestures, saved station |
 | `main/board.c` | Display, Wi-Fi, time sync |
-| `main/wifi_setup.c` | Phone setup: hotspot, QR code, captive portal page |
+| `main/wifi_setup.c` | Phone setup: hotspot, captive portal DNS, connecting |
+| `main/web.c` | Web pages: Wi-Fi setup portal, line and station settings |
 | `main/improv.c`, `main/serial.c` | Improv Wi-Fi setup for the web installer, debug keys |
 | `components/dns_server` | Captive portal DNS, from the ESP-IDF examples (CC0) |
 | `main/metro_data.c` | Station order per line (generated) |

@@ -15,6 +15,9 @@ void board_wifi_init(void);
 bool board_wifi_connected(void);
 bool board_wifi_configured(void);
 
+/* Address on the home network, e.g. "192.168.1.167"; empty when offline. */
+const char *board_wifi_ip(void);
+
 /* Save new credentials and try them. Blocks until connected (true) or
  * failed/timed out (false). Used by Improv provisioning. */
 bool board_wifi_provision(const char *ssid, const char *password, int timeout_ms);
