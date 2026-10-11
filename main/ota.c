@@ -14,6 +14,7 @@
 #include "freertos/semphr.h"
 #include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "esp_log.h"
@@ -146,18 +147,18 @@ static bool latest_release(char *tag, size_t tag_len, char *url, size_t url_len)
         }
         cJSON_Delete(root);
     } else {
-        ESP_LOGW(TAG, "Release check failed: %s, HTTP %d", esp_err_to_name(err), code);
+        ESP_LOGW(TAG, "Release check failed: %s, HTTP %d (free heap %u, largest block %u)",
+                 esp_err_to_name(err), code, (unsigned)esp_get_free_heap_size(),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
     free(b.buf);
     return ok;
 }
 
+/* Called with departure polling paused. */
 static bool install(const char *url)
 {
     set_state(OTA_DOWNLOADING);
-    /* Two TLS sessions at once don't fit in RAM. */
-    sl_set_paused(true);
-    vTaskDelay(pdMS_TO_TICKS(3000));
 
     esp_http_client_config_t http = {
         .url = url,
@@ -194,7 +195,6 @@ static bool install(const char *url)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Update failed: %s", esp_err_to_name(err));
         set_state(OTA_FAILED);
-        sl_set_paused(false);
         return false;
     }
     ESP_LOGI(TAG, "Update installed, restarting");
@@ -213,9 +213,12 @@ static void check(bool manual)
         return;
     }
     set_state(OTA_CHECKING);
+    /* Two TLS sessions at once don't fit in RAM. */
+    sl_set_paused(true);
     char tag[24], url[256];
     if (!latest_release(tag, sizeof(tag), url, sizeof(url))) {
         set_state(OTA_FAILED);
+        sl_set_paused(false);
         return;
     }
     xSemaphoreTake(mutex, portMAX_DELAY);
@@ -231,6 +234,7 @@ static void check(bool manual)
     } else {
         set_state(OTA_UP_TO_DATE);
     }
+    sl_set_paused(false);
 }
 
 static void ota_task(void *arg)

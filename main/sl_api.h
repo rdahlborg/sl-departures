@@ -63,7 +63,8 @@ void sl_init(void);
  * if the site is not on it. */
 void sl_start(int group, uint16_t site);
 
-/* Stop polling while a firmware update downloads, to save RAM for TLS. */
+/* Stop polling and free its TLS connection and buffer, so a firmware
+ * update has the RAM. Pausing blocks until they are freed (max ~10 s). */
 void sl_set_paused(bool pause);
 
 /* True once a poll has succeeded since boot (firmware health check). */

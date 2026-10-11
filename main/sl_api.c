@@ -33,6 +33,7 @@ static sl_state_t state;
 static sl_config_t config;
 static TaskHandle_t poll_handle;
 static volatile bool paused;
+static volatile bool released;      /* connection and buffer freed while paused */
 static volatile bool ever_succeeded;
 
 typedef struct {
@@ -216,7 +217,27 @@ static void poll_task(void *arg)
     static sl_state_t next;
 
     while (1) {
-        if (!board_wifi_connected() || !board_time_valid() || paused) {
+        if (paused) {
+            /* A firmware update needs the RAM: close the kept-alive TLS
+             * connection and free the response buffer. */
+            if (!released) {
+                esp_http_client_close(client);
+                free(resp.buf);
+                resp.buf = NULL;
+                released = true;
+            }
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            continue;
+        }
+        if (!resp.buf) {
+            resp.buf = malloc(RESP_MAX);
+            released = false;
+            if (!resp.buf) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+        }
+        if (!board_wifi_connected() || !board_time_valid()) {
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
             continue;
         }
@@ -313,8 +334,13 @@ void sl_start(int group, uint16_t site)
 void sl_set_paused(bool pause)
 {
     paused = pause;
-    if (!pause && poll_handle) {
-        xTaskNotifyGive(poll_handle);
+    if (!poll_handle) {
+        return;
+    }
+    xTaskNotifyGive(poll_handle);
+    /* Wait until the connection is closed, finishing a poll in progress. */
+    for (int i = 0; pause && !released && i < 100; i++) {
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
