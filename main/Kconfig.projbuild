@@ -1,0 +1,26 @@
+menu "SL Departures Configuration"
+    config WIFI_SSID
+        string "Wi-Fi SSID"
+        default ""
+        help
+            Optional, for developer builds. Used only when no network has
+            been saved through the web installer (Improv).
+    config WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+    config CLOCK_TZ
+        string "POSIX timezone"
+        default "CET-1CEST,M3.5.0,M10.5.0/3"
+        help
+            Europe/Stockholm. SL's API returns local times, so this must match.
+    config SL_POLL_SECONDS
+        int "Seconds between API polls"
+        default 20
+        range 10 300
+    config INSTALLER_URL
+        string "Web installer address shown when Wi-Fi is not set up"
+        default "rdahlborg.github.io/sl-departures"
+    config DISPLAY_FLIP
+        bool "Rotate the display 180 degrees"
+        default n
+endmenu

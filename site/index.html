@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SL Departures</title>
+  <meta name="description" content="Live Stockholm metro departures and train positions on an ESP32-C6 display. Install from the browser.">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #f6f8f7;
+      --surface: #ffffff;
+      --text: #14201a;
+      --muted: #5b6b63;
+      --border: #dfe6e2;
+      --green: #179c4c;
+      --red: #d71d24;
+      --blue: #0089ca;
+      --screen: #0b1410;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0b1410;
+        --surface: #13201a;
+        --text: #e9f0ec;
+        --muted: #93a59c;
+        --border: #24352c;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #0b1410;
+      --surface: #13201a;
+      --text: #e9f0ec;
+      --muted: #93a59c;
+      --border: #24352c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+    .lines { display: flex; gap: 6px; margin-bottom: 18px; }
+    .lines span { width: 28px; height: 6px; border-radius: 3px; }
+    h1 { font-size: 2rem; line-height: 1.15; margin: 0 0 8px; letter-spacing: -0.01em; }
+    h2 { font-size: 1.15rem; margin: 40px 0 12px; }
+    p { margin: 0 0 12px; }
+    .lede { color: var(--muted); font-size: 1.1rem; margin-bottom: 28px; }
+    .screen {
+      display: block;
+      width: 100%;
+      max-width: 480px;
+      border-radius: 14px;
+      border: 10px solid #1c1c1c;
+      background: var(--screen);
+      image-rendering: pixelated;
+    }
+    .gallery { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+    .gallery img { width: calc(50% - 6px); min-width: 220px; flex: 1; border-radius: 8px; image-rendering: pixelated; }
+    .install {
+      margin: 28px 0 8px;
+      padding: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    esp-web-install-button button {
+      font: inherit;
+      font-weight: 600;
+      color: #fff;
+      background: var(--green);
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 22px;
+      cursor: pointer;
+    }
+    esp-web-install-button button:hover { filter: brightness(1.08); }
+    .note { color: var(--muted); font-size: 0.92rem; margin: 12px 0 0; }
+    ol, ul { padding-left: 22px; margin: 0 0 12px; }
+    li { margin-bottom: 6px; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+    a { color: var(--blue); }
+    code { font-size: 0.92em; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+    footer { margin-top: 48px; color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="lines" aria-hidden="true">
+    <span style="background: var(--green)"></span>
+    <span style="background: var(--red)"></span>
+    <span style="background: var(--blue)"></span>
+  </div>
+  <h1>SL Departures</h1>
+  <p class="lede">Live Stockholm metro departures, and where the next trains are right now, on a small ESP32-C6 display.</p>
+
+  <img class="screen" src="brommaplan.png" alt="The display showing Brommaplan on the green line, with trains on a line map and the next departures in each direction" width="960" height="516">
+
+  <section class="install">
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Install on your board</button>
+      <span slot="unsupported">Installing needs Chrome or Edge on a computer. Your browser doesn't support Web Serial.</span>
+      <span slot="not-allowed">Installing needs a secure (https) page.</span>
+    </esp-web-install-button>
+    <p class="note">Connect the board with a USB-C data cable, click the button, and pick the port. After flashing, the installer asks for your Wi-Fi name and password. They are sent only to the board.</p>
+  </section>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>A <a href="https://www.waveshare.com/esp32-c6-lcd-1.47.htm">Waveshare ESP32-C6-LCD-1.47</a> (ESP32-C6 with a 1.47" 172×320 display).</li>
+    <li>A USB-C cable that carries data, not just power.</li>
+    <li>Chrome or Edge on Windows, macOS, Linux or ChromeOS.</li>
+  </ul>
+
+  <h2>Using it</h2>
+  <p>Everything is done with the <strong>BOOT</strong> button. RESET just restarts the board.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Where</th><th>Press</th><th>Double press</th><th>Hold</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Departure board</td><td>Next station</td><td>Previous station</td><td>Choose line</td></tr>
+        <tr><td>Line list</td><td>Next line</td><td>Previous line</td><td>Select</td></tr>
+        <tr><td>Station list</td><td>Next station</td><td>Previous station</td><td>Select</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">The board remembers your station. The map shows four stations each side of yours. Trains are placed from SL's real-time departures at the neighbouring stations, so they move along the line as they approach.</p>
+
+  <div class="gallery">
+    <img src="slussen.png" alt="Slussen on the red line" width="960" height="516">
+    <img src="station-picker.png" alt="Choosing a station on the red line" width="960" height="516">
+  </div>
+
+  <h2>Changing Wi-Fi</h2>
+  <p>Open this page again with the board connected, click the button, and choose <em>Change Wi-Fi</em>. Your station is kept.</p>
+
+  <footer>
+    <p>Data from <a href="https://www.trafiklab.se/">Trafiklab.se</a> (SL Transport API). Not affiliated with SL or Trafiklab.</p>
+    <p>Source code and build instructions on <a href="https://github.com/rdahlborg/sl-departures">GitHub</a>.</p>
+  </footer>
+</main>
+</body>
+</html>

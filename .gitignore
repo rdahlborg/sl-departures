@@ -1,0 +1,7 @@
+secrets.defaults
+sdkconfig
+sdkconfig.old
+build/
+managed_components/
+_site/
+.DS_Store
