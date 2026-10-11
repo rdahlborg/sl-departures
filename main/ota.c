@@ -177,6 +177,7 @@ static bool install(const char *url)
         if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
             break;
         }
+        err = ESP_OK;
         int total = esp_https_ota_get_image_size(ota);
         int read = esp_https_ota_get_image_len_read(ota);
         if (total > 0) {
@@ -194,7 +195,7 @@ static bool install(const char *url)
     }
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Update failed: %s", esp_err_to_name(err));
-        set_state(OTA_FAILED);
+        set_state(OTA_INSTALL_FAILED);
         return false;
     }
     ESP_LOGI(TAG, "Update installed, restarting");

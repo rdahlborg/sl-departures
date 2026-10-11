@@ -13,7 +13,8 @@ typedef enum {
     OTA_UP_TO_DATE,
     OTA_DOWNLOADING,
     OTA_DONE,           /* restarting into the new version */
-    OTA_FAILED,
+    OTA_FAILED,         /* could not check */
+    OTA_INSTALL_FAILED, /* found a new version but could not install it */
 } ota_state_t;
 
 typedef struct {

@@ -546,7 +546,7 @@ static void update_about(void)
     ota_status_t os;
     ota_get_status(&os);
     const char *state;
-    char latest[64];
+    char latest[96];
     switch (os.state) {
     case OTA_CHECKING:
         state = "Söker efter uppdatering…";
@@ -557,6 +557,11 @@ static void update_about(void)
         break;
     case OTA_FAILED:
         state = "Kunde inte söka efter uppdateringar. Försök igen senare.";
+        break;
+    case OTA_INSTALL_FAILED:
+        snprintf(latest, sizeof(latest), "Uppdateringen till %s misslyckades. Försök igen senare.",
+                 os.latest);
+        state = latest;
         break;
     default:
         state = "Nya versioner installeras automatiskt på natten.";
