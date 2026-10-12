@@ -75,7 +75,7 @@ static row_t rows[2][LIST_ROWS];
 static sl_config_t shown;       /* config the map was built for */
 
 static void update_setup(void);
-static void update_boot(void);
+static void update_boot(bool have_data);
 static void update_about(void);
 static void update_progress(void);
 static uint32_t line_color;
@@ -335,7 +335,6 @@ static void update_cb(lv_timer_t *t)
     char buf[16];
 
     update_setup();
-    update_boot();
     update_about();
     update_progress();
 
@@ -358,6 +357,7 @@ static void update_cb(lv_timer_t *t)
 
     static sl_state_t st;
     bool have = sl_snapshot(&st);
+    update_boot(have);
     uint32_t dot = !board_wifi_connected() ? COL_ERR
                  : !have || difftime(now, st.updated) > STALE_S ? COL_WARN : COL_OK;
     lv_obj_set_style_bg_color(status_dot, lv_color_hex(dot), 0);
@@ -574,17 +574,51 @@ bool ui_phone_visible(void)
 /* ---- start screen -------------------------------------------------- */
 
 #define BOOT_MIN_MS 2500
+/* Give up waiting for departures, so a missing network shows on the board. */
+#define BOOT_MAX_MS 30000
+
+/* The line-colour bars, and a train that runs along them while booting. */
+#define BARS_W      (3 * 28 + 2 * 6)
+#define BARS_X      ((LCD_H_RES - BARS_W) / 2)
+#define BARS_Y      34
+#define TRAIN_W     22
+#define TRAIN_H     10
+#define TRAIN_RUN_MS 1600
+#define TRAIN_FADE  150     /* of 1000: fade in and out at the ends */
+
+static lv_obj_t *boot_train;
+
+static void train_step(void *obj, int32_t v)
+{
+    int x0 = BARS_X - 6, x1 = BARS_X + BARS_W - TRAIN_W + 6;
+    lv_obj_set_x(obj, x0 + (x1 - x0) * v / 1000);
+    int opa = v < TRAIN_FADE ? v * 255 / TRAIN_FADE
+            : v > 1000 - TRAIN_FADE ? (1000 - v) * 255 / TRAIN_FADE : 255;
+    lv_obj_set_style_opa(obj, opa, 0);
+}
 
 static void build_boot(lv_obj_t *scr)
 {
     boot_panel = box(scr, 0, 0, LCD_H_RES, LCD_V_RES, COL_BG, 0);
-    lv_obj_t *bars = box(boot_panel, 0, 0, 0, 0, COL_BG, 0);
-    lv_obj_set_size(bars, 3 * 28 + 2 * 6, 6);
-    lv_obj_align(bars, LV_ALIGN_TOP_MID, 0, 34);
     const uint32_t colors[] = { 0x179C4C, 0xD71D24, 0x0089CA };
     for (int i = 0; i < 3; i++) {
-        box(bars, i * 34, 0, 28, 6, colors[i], 3);
+        box(boot_panel, BARS_X + i * 34, BARS_Y, 28, 6, colors[i], 3);
     }
+    boot_train = box(boot_panel, BARS_X, BARS_Y + 3 - TRAIN_H / 2, TRAIN_W, TRAIN_H, COL_TEXT, 4);
+    for (int i = 0; i < 3; i++) {
+        box(boot_train, 4 + i * 6, 2, 4, 3, COL_BG, 1);
+    }
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, boot_train);
+    lv_anim_set_exec_cb(&a, train_step);
+    lv_anim_set_values(&a, 0, 1000);
+    lv_anim_set_duration(&a, TRAIN_RUN_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_repeat_delay(&a, 300);
+    lv_anim_start(&a);
+
     lv_obj_t *title = text(boot_panel, &sl_font_22, COL_TEXT, "SL Departures");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
     lv_obj_t *ver = text(boot_panel, &sl_font_16, COL_DIM, ota_version());
@@ -600,20 +634,25 @@ static void build_boot(lv_obj_t *scr)
     boot_started = lv_tick_get();
 }
 
-static void update_boot(void)
+/* Stays up until the first departures are in, or until BOOT_MAX_MS. */
+static void update_boot(bool have_data)
 {
     if (lv_obj_is_hidden(boot_panel)) {
         return;
     }
-    sl_config_t cfg;
-    sl_get_config(&cfg);
-    if (lv_tick_elaps(boot_started) >= BOOT_MIN_MS && metro_ready() && cfg.generation) {
+    uint32_t elapsed = lv_tick_elaps(boot_started);
+    bool done = have_data || !board_wifi_configured() || elapsed >= BOOT_MAX_MS;
+    if (elapsed >= BOOT_MIN_MS && done) {
         lv_obj_set_hidden(boot_panel, true);
+        lv_anim_delete(boot_train, train_step);
         return;
     }
     char buf[64] = "";
     if (!metro_ready()) {
         metro_status(buf, sizeof(buf));
+    } else if (!have_data) {
+        strlcpy(buf, board_wifi_connected() ? "Hämtar avgångar…" : "Ansluter till Wi-Fi…",
+                sizeof(buf));
     }
     lv_label_set_text(boot_status, buf);
 }
@@ -790,10 +829,11 @@ void ui_init(void)
     lv_obj_set_scrollable(map_layer, false);
 
     build_list(scr);
+    /* Below the menus, which can be opened while it is still up. */
+    build_boot(scr);
     build_picker(scr);
     build_phone(scr);
     build_about(scr);
-    build_boot(scr);
     build_setup(scr);
     build_progress(scr);
 
