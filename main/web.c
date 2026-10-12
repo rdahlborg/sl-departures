@@ -9,6 +9,9 @@
  *   Networks added there are saved without being tried, since trying one
  *   would take the board, and the phone's page, off the current network.
  *
+ * Both are in Swedish or English (i18n.h), with a link at the top to switch,
+ * which switches the board too.
+ *
  * Forms are sent with fetch(): iOS warns that a password form on a plain
  * http page "is not secure", and in the captive portal sheet "Send Anyway"
  * then never sends it.
@@ -20,6 +23,7 @@
 #include "esp_log.h"
 #include "board.h"
 #include "controls.h"
+#include "i18n.h"
 #include "metro_data.h"
 #include "sl_api.h"
 #include "wifi_setup.h"
@@ -27,8 +31,9 @@
 
 static const char *TAG = "web";
 
+/* Starts after <html lang=..>, see send_head(). */
 static const char PAGE_HEAD[] =
-    "<!doctype html><html lang=sv><head><meta charset=utf-8>"
+    "<head><meta charset=utf-8>"
     "<meta name=viewport content='width=device-width,initial-scale=1'>"
     "<title>SL Departures</title><style>"
     "body{font:17px/1.5 system-ui,sans-serif;margin:0;background:#0b1410;color:#e9f0ec}"
@@ -45,14 +50,34 @@ static const char PAGE_HEAD[] =
     ".net{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #2c4237}"
     ".net span{flex:1;overflow-wrap:anywhere}.net small{color:#93a59c}"
     ".net button{width:auto;margin:0;padding:8px 14px;background:#2c4237}"
+    ".lang{margin-left:auto;margin-top:-8px;color:#93a59c;font-size:.9em}"
     "</style></head><body><main>"
     "<div class=bar><i style=background:#179c4c></i><i style=background:#d71d24></i>"
-    "<i style=background:#0089ca></i></div>";
+    "<i style=background:#0089ca></i>";
 
-static const char PAGE_TAIL[] =
-    "<p style='margin-top:40px;font-size:.85em'>SL Departures av " CONFIG_APP_AUTHOR
-    " · <a style='color:#93a59c' href='https://github.com/" CONFIG_OTA_GITHUB_REPO "'>GitHub</a>"
-    " · Data: Trafiklab.se</p></main></body></html>";
+/* Switches language and reloads; follows the bar in PAGE_HEAD. */
+static const char LANG_LINK[] =
+    "<a class=lang href=# onclick=\"fetch('/lang',{method:'POST',body:new URLSearchParams("
+    "{lang:this.dataset.l})}).then(function(){location.reload()});return false\" ";
+
+static void send_head(httpd_req_t *req)
+{
+    httpd_resp_sendstr_chunk(req, T("<!doctype html><html lang=sv>", "<!doctype html><html lang=en>"));
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    httpd_resp_sendstr_chunk(req, LANG_LINK);
+    /* The other language, named in that language. */
+    httpd_resp_sendstr_chunk(req, T("data-l=en lang=en>English</a></div>",
+                                    "data-l=sv lang=sv>Svenska</a></div>"));
+}
+
+static void send_tail(httpd_req_t *req)
+{
+    httpd_resp_sendstr_chunk(req, T("<p style='margin-top:40px;font-size:.85em'>SL Departures av ",
+                                    "<p style='margin-top:40px;font-size:.85em'>SL Departures by "));
+    httpd_resp_sendstr_chunk(req, CONFIG_APP_AUTHOR " · <a style='color:#93a59c' "
+                             "href='https://github.com/" CONFIG_OTA_GITHUB_REPO "'>GitHub</a>"
+                             " · Data: Trafiklab.se</p></main></body></html>");
+}
 
 /* ---- helpers -------------------------------------------------------- */
 
@@ -157,20 +182,23 @@ static bool apply_station(const char *body)
 static void send_station_picker(httpd_req_t *req)
 {
     if (!metro_ready()) {
-        httpd_resp_sendstr_chunk(req, "<p>Stationslistan hämtas när tavlan är ansluten. "
-                                      "Du kan välja station sedan.</p>");
+        httpd_resp_sendstr_chunk(req, T("<p>Stationslistan hämtas när tavlan är ansluten. "
+                                        "Du kan välja station sedan.</p>",
+                                        "<p>The station list is fetched once the board is "
+                                        "online. You can choose a station then.</p>"));
         return;
     }
     sl_config_t cfg;
     sl_get_config(&cfg);
     char buf[64];
 
-    httpd_resp_sendstr_chunk(req, "<label for=g>Linje</label><select id=g name=group></select>"
+    httpd_resp_sendstr_chunk(req, T("<label for=g>Linje</label>", "<label for=g>Line</label>"));
+    httpd_resp_sendstr_chunk(req, "<select id=g name=group></select>"
                                   "<label for=s>Station</label><select id=s name=site></select>"
                                   "<script>var L=[");
     for (int gi = 0; gi < METRO_N_GROUPS; gi++) {
         const metro_group_t *g = &metro_groups[gi];
-        snprintf(buf, sizeof(buf), "%s{n:\"%s\",s:[", gi ? "," : "", g->name);
+        snprintf(buf, sizeof(buf), "%s{n:\"%s\",s:[", gi ? "," : "", metro_group_name(gi));
         httpd_resp_sendstr_chunk(req, buf);
         for (int i = 0; i < g->n_stations; i++) {
             /* Station names are plain text without quotes or backslashes. */
@@ -200,19 +228,21 @@ static void send_saved_networks(httpd_req_t *req)
         return;
     }
     const char *current = board_wifi_ssid();
-    char buf[96];
-    snprintf(buf, sizeof(buf), "<p>Tavlan minns upp till %d nätverk och väljer det "
-                               "starkaste den hittar.</p>", BOARD_MAX_NETWORKS);
+    char buf[112];
+    snprintf(buf, sizeof(buf), T("<p>Tavlan minns upp till %d nätverk och väljer det "
+                                 "starkaste den hittar.</p>",
+                                 "<p>The board remembers up to %d networks and joins the "
+                                 "strongest one it finds.</p>"), BOARD_MAX_NETWORKS);
     httpd_resp_sendstr_chunk(req, buf);
     for (int i = 0; i < n; i++) {
         httpd_resp_sendstr_chunk(req, "<div class=net><span>");
         send_escaped(req, saved[i]);
         if (!strcmp(saved[i], current)) {
-            httpd_resp_sendstr_chunk(req, " <small>ansluten</small>");
+            httpd_resp_sendstr_chunk(req, T(" <small>ansluten</small>", " <small>connected</small>"));
         }
         httpd_resp_sendstr_chunk(req, "</span><button type=button data-ssid=\"");
         send_escaped(req, saved[i]);
-        httpd_resp_sendstr_chunk(req, "\">Glöm</button></div>");
+        httpd_resp_sendstr_chunk(req, T("\">Glöm</button></div>", "\">Forget</button></div>"));
     }
     httpd_resp_sendstr_chunk(req,
         "<script>document.querySelectorAll('.net button').forEach(function(b){"
@@ -272,16 +302,21 @@ static esp_err_t setup_page(httpd_req_t *req)
     int n = wifi_setup_networks(&aps);
     ESP_LOGI(TAG, "Setup page requested");
 
-    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
-    httpd_resp_sendstr_chunk(req, "<div id=form><h1>Ställ in tavlan</h1>"
-                                  "<p>Välj ditt Wi-Fi och vilken station tavlan ska visa.</p>");
+    send_head(req);
+    httpd_resp_sendstr_chunk(req, T("<div id=form><h1>Ställ in tavlan</h1>"
+                                    "<p>Välj ditt Wi-Fi och vilken station tavlan ska visa.</p>",
+                                    "<div id=form><h1>Set up the board</h1>"
+                                    "<p>Choose your Wi-Fi and the station the board should show.</p>"));
     if (st.last_failed) {
-        httpd_resp_sendstr_chunk(req, "<p class=err>Kunde inte ansluta till ");
+        httpd_resp_sendstr_chunk(req, T("<p class=err>Kunde inte ansluta till ",
+                                        "<p class=err>Couldn't connect to "));
         send_escaped(req, st.target);
-        httpd_resp_sendstr_chunk(req, ". Kontrollera lösenordet och försök igen.</p>");
+        httpd_resp_sendstr_chunk(req, T(". Kontrollera lösenordet och försök igen.</p>",
+                                        ". Check the password and try again.</p>"));
     }
-    httpd_resp_sendstr_chunk(req, "<form method=post action=/connect>"
-                                  "<label for=ssid>Wi-Fi-nätverk</label><select id=ssid name=ssid "
+    httpd_resp_sendstr_chunk(req, T("<form method=post action=/connect><label for=ssid>Wi-Fi-nätverk",
+                                    "<form method=post action=/connect><label for=ssid>Wi-Fi network"));
+    httpd_resp_sendstr_chunk(req, "</label><select id=ssid name=ssid "
                                   "onchange=\"document.getElementById('other').style.display="
                                   "this.value==''?'block':'none'\">");
     for (int i = 0; i < n; i++) {
@@ -291,40 +326,54 @@ static esp_err_t setup_page(httpd_req_t *req)
         send_escaped(req, aps[i].ssid);
         httpd_resp_sendstr_chunk(req, "</option>");
     }
-    httpd_resp_sendstr_chunk(req, "<option value=''>Annat nätverk…</option></select>"
-                                  "<input id=other name=other placeholder='Nätverkets namn' "
-                                  "autocapitalize=off autocorrect=off>"
-                                  "<label for=pw>Lösenord</label>"
-                                  "<input id=pw name=password type=password autocomplete=off>");
+    httpd_resp_sendstr_chunk(req, T("<option value=''>Annat nätverk…</option></select>"
+                                    "<input id=other name=other placeholder='Nätverkets namn' "
+                                    "autocapitalize=off autocorrect=off>"
+                                    "<label for=pw>Lösenord</label>",
+                                    "<option value=''>Other network…</option></select>"
+                                    "<input id=other name=other placeholder='Network name' "
+                                    "autocapitalize=off autocorrect=off>"
+                                    "<label for=pw>Password</label>"));
+    httpd_resp_sendstr_chunk(req, "<input id=pw name=password type=password autocomplete=off>");
     send_station_picker(req);
-    httpd_resp_sendstr_chunk(req, "<button>Anslut</button></form>");
+    httpd_resp_sendstr_chunk(req, T("<button>Anslut</button></form>", "<button>Connect</button></form>"));
     if (board_wifi_configured()) {
-        httpd_resp_sendstr_chunk(req, "<h2>Sparade nätverk</h2>");
+        httpd_resp_sendstr_chunk(req, T("<h2>Sparade nätverk</h2>", "<h2>Saved networks</h2>"));
         send_saved_networks(req);
     }
-    httpd_resp_sendstr_chunk(req, "</div>"
-        "<div id=wait hidden><h1 id=t></h1><p id=m>Det tar upp till 20 sekunder. "
-        "Mobilen kan tappa anslutningen under tiden, titta då på tavlans skärm.</p></div>");
+    httpd_resp_sendstr_chunk(req, T("</div><div id=wait hidden><h1 id=t></h1><p id=m>Det tar upp "
+                                    "till 20 sekunder. Mobilen kan tappa anslutningen under tiden, "
+                                    "titta då på tavlans skärm.</p></div>",
+                                    "</div><div id=wait hidden><h1 id=t></h1><p id=m>This takes up "
+                                    "to 20 seconds. The phone may lose its connection meanwhile; if "
+                                    "so, look at the board's screen.</p></div>"));
     if (n == 0) {
         httpd_resp_sendstr_chunk(req, "<script>document.getElementById('other')"
                                       ".style.display='block'</script>");
     }
     httpd_resp_sendstr_chunk(req, "<script>");
     httpd_resp_sendstr_chunk(req, SUBMIT_JS);
+    /* Texts for the script below, which has no apostrophes to trip on. */
+    httpd_resp_sendstr_chunk(req, T(
+        "var W=['Skickar…','Ansluter till '];"
+        "function lost(){show('Titta på tavlan','Skärmen visar om anslutningen lyckades.')}"
+        "function done(){show('Klart!','Tavlan är ansluten. Du kan stänga sidan.')}",
+        "var W=['Sending…','Connecting to '];"
+        "function lost(){show('Look at the board','Its screen shows whether it connected.')}"
+        "function done(){show('Done!','The board is connected. You can close this page.')}"));
     httpd_resp_sendstr_chunk(req,
         "var T=document.getElementById('t'),M=document.getElementById('m'),n=0;"
         "function show(h,m){document.getElementById('form').hidden=true;"
         "document.getElementById('wait').hidden=false;T.textContent=h;if(m)M.textContent=m}"
-        "function lost(){show('Titta på tavlan','Skärmen visar om anslutningen lyckades.')}"
         "function poll(){fetch('/status').then(function(r){return r.json()}).then(function(s){"
-        "if(s.state=='done'){show('Klart!','Tavlan är ansluten. Du kan stänga sidan.');return}"
+        "if(s.state=='done'){done();return}"
         "if(s.state=='failed'){location='/';return}setTimeout(poll,1000)})"
         ".catch(function(){if(++n>30){lost();return}setTimeout(poll,1000)})}"
-        "submit(document.querySelector('form'),'Skickar…',function(j){"
+        "submit(document.querySelector('form'),W[0],function(j){"
         "if(!j){lost();return}if(!j.ok){location='/';return}"
-        "show('Ansluter till '+j.ssid+'…');setTimeout(poll,1500)})"
-        "</script>");
-    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
+        "show(W[1]+j.ssid+'…');setTimeout(poll,1500)});");
+    httpd_resp_sendstr_chunk(req, "</script>");
+    send_tail(req);
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
@@ -392,6 +441,18 @@ static esp_err_t networks_get(httpd_req_t *req)
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
+static esp_err_t lang_post(httpd_req_t *req)
+{
+    char body[32], lang[4];
+    httpd_resp_set_type(req, "application/json");
+    if (!read_body(req, body, sizeof(body)) || !form_value(body, "lang", lang, sizeof(lang)) ||
+        (strcmp(lang, "sv") && strcmp(lang, "en"))) {
+        return httpd_resp_sendstr(req, "{\"ok\":false}");
+    }
+    i18n_set(strcmp(lang, "en") ? LANG_SV : LANG_EN);
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
 static esp_err_t forget_post(httpd_req_t *req)
 {
     char body[128], ssid[33];
@@ -421,15 +482,16 @@ static esp_err_t status_get(httpd_req_t *req)
 
 static esp_err_t settings_page(httpd_req_t *req)
 {
-    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
-    httpd_resp_sendstr_chunk(req, "<h1>SL Departures</h1>"
-                                  "<p>Välj vilken station tavlan ska visa.</p>"
-                                  "<form method=post action=/station>");
+    send_head(req);
+    httpd_resp_sendstr_chunk(req, T("<h1>SL Departures</h1><p>Välj vilken station tavlan ska visa.</p>",
+                                    "<h1>SL Departures</h1><p>Choose the station the board shows.</p>"));
+    httpd_resp_sendstr_chunk(req, "<form method=post action=/station>");
     send_station_picker(req);
-    httpd_resp_sendstr_chunk(req, "<button>Visa på tavlan</button></form>"
-                                  "<p id=r style='margin-top:16px'></p><h2>Wi-Fi</h2>");
+    httpd_resp_sendstr_chunk(req, T("<button>Visa på tavlan</button></form>",
+                                    "<button>Show on the board</button></form>"));
+    httpd_resp_sendstr_chunk(req, "<p id=r style='margin-top:16px'></p><h2>Wi-Fi</h2>");
     send_saved_networks(req);
-    httpd_resp_sendstr_chunk(req,
+    httpd_resp_sendstr_chunk(req, T(
         "<button type=button id=addb>Lägg till nätverk</button>"
         "<form id=add method=post action=/add hidden>"
         "<label for=ns>Nätverk</label><select id=ns name=ssid>"
@@ -439,25 +501,42 @@ static esp_err_t settings_page(httpd_req_t *req)
         "<input id=npw name=password type=password autocomplete=off>"
         "<p style='margin-top:12px'>Tavlan byter till nätverket när det nuvarande försvinner, "
         "och provar lösenordet först då.</p>"
-        "<button>Spara</button></form><p id=ar style='margin-top:16px'></p><script>");
+        "<button>Spara</button></form>",
+        "<button type=button id=addb>Add network</button>"
+        "<form id=add method=post action=/add hidden>"
+        "<label for=ns>Network</label><select id=ns name=ssid>"
+        "<option value=''>Other network…</option></select>"
+        "<input id=other name=other placeholder='Network name' autocapitalize=off autocorrect=off>"
+        "<label for=npw>Password</label>"
+        "<input id=npw name=password type=password autocomplete=off>"
+        "<p style='margin-top:12px'>The board switches to this network when the current one is "
+        "lost, and tries the password then.</p>"
+        "<button>Save</button></form>"));
+    httpd_resp_sendstr_chunk(req, "<p id=ar style='margin-top:16px'></p><script>");
     httpd_resp_sendstr_chunk(req, SUBMIT_JS);
+    /* Texts for the script below, which has no apostrophes to trip on. */
+    httpd_resp_sendstr_chunk(req, T(
+        "var W=['Sparar…','Tavlan visar nu ','Det gick inte. Försök igen.','Söker efter nätverk…',"
+        "'Det gick inte. Lösenordet ska ha minst 8 tecken.'];",
+        "var W=['Saving…','The board now shows ','That didn’t work. Try again.',"
+        "'Looking for networks…','That didn’t work. The password needs at least 8 characters.'];"));
     httpd_resp_sendstr_chunk(req,
         "var R=document.getElementById('r');"
-        "submit(document.querySelector('form'),'Sparar…',function(j){"
-        "if(j&&j.ok){R.className='ok';R.textContent='Tavlan visar nu '+j.name+'.';S=+s.value}"
-        "else{R.className='err';R.textContent='Det gick inte. Försök igen.'}});"
+        "submit(document.querySelector('form'),W[0],function(j){"
+        "if(j&&j.ok){R.className='ok';R.textContent=W[1]+j.name+'.';S=+s.value}"
+        "else{R.className='err';R.textContent=W[2]}});"
         "var A=document.getElementById('add'),NS=document.getElementById('ns'),"
         "O=document.getElementById('other'),AR=document.getElementById('ar');"
         "function oth(){O.style.display=NS.value==''?'block':'none'}NS.onchange=oth;"
         "document.getElementById('addb').onclick=function(){this.hidden=true;A.hidden=false;oth();"
-        "AR.textContent='Söker efter nätverk…';"
+        "AR.textContent=W[3];"
         "fetch('/networks').then(function(r){return r.json()}).then(function(l){"
         "l.forEach(function(x,i){NS.add(new Option(x,x),i)});NS.selectedIndex=0;oth();"
         "AR.textContent=''}).catch(function(){AR.textContent=''})};"
-        "submit(A,'Sparar…',function(j){if(j&&j.ok){location.reload();return}"
-        "AR.className='err';AR.textContent='Det gick inte. Lösenordet ska ha minst 8 tecken.'})"
+        "submit(A,W[0],function(j){if(j&&j.ok){location.reload();return}"
+        "AR.className='err';AR.textContent=W[4]})"
         "</script>");
-    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
+    send_tail(req);
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
@@ -511,6 +590,7 @@ void web_start(void)
     cfg.max_open_sockets = 5;
     cfg.lru_purge_enable = true;
     cfg.stack_size = 6144;
+    cfg.max_uri_handlers = 12;
     httpd_handle_t httpd;
     if (httpd_start(&httpd, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Could not start web server");
@@ -523,6 +603,7 @@ void web_start(void)
         { .uri = "/forget",  .method = HTTP_POST, .handler = forget_post },
         { .uri = "/add",     .method = HTTP_POST, .handler = add_post },
         { .uri = "/networks", .method = HTTP_GET, .handler = networks_get },
+        { .uri = "/lang",    .method = HTTP_POST, .handler = lang_post },
         { .uri = "/station", .method = HTTP_POST, .handler = station_post },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {

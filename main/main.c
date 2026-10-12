@@ -4,6 +4,7 @@
 #include "esp_lvgl_port.h"
 #include "board.h"
 #include "controls.h"
+#include "i18n.h"
 #include "metro_data.h"
 #include "ota.h"
 #include "serial.h"
@@ -35,6 +36,7 @@ void app_main(void)
     serial_init();
 
     controls_load(&saved_group, &saved_site);
+    i18n_load();
     /* Before the UI, which reads SL state. */
     sl_init();
 

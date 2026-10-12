@@ -22,6 +22,8 @@ Made by Robert Dahlborg.
   Remembers up to 5 networks and joins the strongest one in range.
 - Updates itself over Wi-Fi from the GitHub releases, with automatic rollback.
 - Fetches the station list from SL, so new stations show up by themselves.
+- In Swedish or English, switched from the board or the phone. Station and
+  destination names stay as SL writes them.
 
 ## Getting started
 
@@ -54,7 +56,8 @@ Everything is done with the **BOOT** button. RESET just restarts the board.
 | Wi-Fi setup | | | cancel |
 
 The line list has the three lines followed by **Mobil…** (station and Wi-Fi
-from a phone) and **Om / Uppdatera…** (version, address and updates). The lists close by themselves after 30
+from a phone), **English** (switch language; **Svenska** switches back) and
+**Om / Uppdatera…** (version, address and updates). The lists close by themselves after 30
 seconds without a press.
 
 ![Choosing Slussen on the red line with the button](screenshots/choose-station.png)
@@ -74,7 +77,8 @@ switches to it when the current network is lost, and only then finds out
 whether the password is right.
 
 If the board has no Wi-Fi, **Mobil…** starts the setup hotspot instead (see
-below).
+below). Both pages have a link at the top for switching between Swedish and
+English, which changes the board's language too.
 
 The page is at `http://<board address>/`, and also at
 `http://sl-departures-xxxx.local/`, where `xxxx` matches the setup hotspot's
@@ -200,6 +204,7 @@ installer page shows the new version.
 | `main/sl_api.c` | Polls the API, works out train positions |
 | `main/ui.c` | LVGL screen: header, line map, departures, lists, QR screens |
 | `main/controls.c` | BOOT button gestures, saved station |
+| `main/i18n.c` | Swedish or English, saved language |
 | `main/board.c` | Display, Wi-Fi, mDNS name, time sync |
 | `main/wifi_setup.c` | Phone setup: hotspot, captive portal DNS, connecting |
 | `main/web.c` | Web pages: Wi-Fi setup portal, line and station settings |

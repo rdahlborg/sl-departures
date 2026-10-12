@@ -20,6 +20,7 @@
 #include "cJSON.h"
 #include "board.h"
 #include "json_stream.h"
+#include "i18n.h"
 #include "metro_data.h"
 
 #define JP_BASE         "https://journeyplanner.integration.sl.se/v2/"
@@ -55,11 +56,12 @@ static const struct {
 
 static const struct {
     const char *name;
+    const char *name_en;
     uint32_t color;
 } GROUPS[METRO_N_GROUPS] = {
-    { "Gröna linjen", 0x179C4C },
-    { "Röda linjen",  0xD71D24 },
-    { "Blå linjen",   0x0089CA },
+    { "Gröna linjen", "Green line", 0x179C4C },
+    { "Röda linjen",  "Red line",   0xD71D24 },
+    { "Blå linjen",   "Blue line",  0x0089CA },
 };
 
 /* Working copy while fetching or loading; freed afterwards. */
@@ -84,7 +86,7 @@ static uint16_t group_stations[METRO_N_GROUPS][MAX_STATIONS];
 static char *name_pool;
 static uint32_t data_fetched;
 static volatile bool ready;
-static char status[64] = "Läser stationslistan…";
+static char status[64];
 static void (*ready_cb)(void);
 
 /* ---- names ---------------------------------------------------------- */
@@ -317,7 +319,8 @@ static bool fetch_all(dataset_t *d)
     bool ok = client && t;
 
     for (int li = 0; ok && li < (int)N_LINES; li++) {
-        snprintf(status, sizeof(status), "Hämtar linje %d från SL…", LINES[li].line);
+        snprintf(status, sizeof(status), T("Hämtar linje %d från SL…", "Fetching line %d from SL…"),
+                 LINES[li].line);
         t->d = d;
         t->line = li;
         if (!fetch_line(client, t)) {
@@ -331,7 +334,8 @@ static bool fetch_all(dataset_t *d)
                     ok = false;
                     break;
                 }
-                snprintf(status, sizeof(status), "Hämtar stationer… %d", d->n_st + 1);
+                snprintf(status, sizeof(status), T("Hämtar stationer… %d", "Fetching stations… %d"),
+                         d->n_st + 1);
                 int site = lookup_site(client, t->names[i]);
                 if (site <= 0 || site > 0xFFFF) {
                     ESP_LOGW(TAG, "No site for %s", t->names[i]);
@@ -502,7 +506,7 @@ static void loader_task(void *arg)
         ESP_LOGI(TAG, "Loaded %d stations from flash", d->n_st);
     } else {
         while (1) {
-            snprintf(status, sizeof(status), "Väntar på Wi-Fi…");
+            snprintf(status, sizeof(status), "%s", T("Väntar på Wi-Fi…", "Waiting for Wi-Fi…"));
             while (!board_wifi_connected() || !board_time_valid()) {
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
@@ -511,7 +515,9 @@ static void loader_task(void *arg)
                 save(d);
                 break;
             }
-            snprintf(status, sizeof(status), "Kunde inte hämta stationer, försöker igen…");
+            snprintf(status, sizeof(status), "%s",
+                     T("Kunde inte hämta stationer, försöker igen…",
+                       "Couldn't fetch stations, retrying…"));
             vTaskDelay(pdMS_TO_TICKS(RETRY_MS));
         }
     }
@@ -537,7 +543,12 @@ bool metro_ready(void)
 
 void metro_status(char *buf, size_t len)
 {
-    strlcpy(buf, status, len);
+    strlcpy(buf, status[0] ? status : T("Läser stationslistan…", "Reading the station list…"), len);
+}
+
+const char *metro_group_name(int group)
+{
+    return T(GROUPS[group].name, GROUPS[group].name_en);
 }
 
 void metro_refresh_if_stale(void)

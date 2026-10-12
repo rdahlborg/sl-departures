@@ -35,6 +35,9 @@ typedef struct {
 /* Valid once metro_ready() is true. */
 extern metro_group_t metro_groups[METRO_N_GROUPS];
 
+/* "Gröna linjen" or "Green line", in the current language. */
+const char *metro_group_name(int group);
+
 /* Load the station list from flash, or fetch it from SL in the background
  * once Wi-Fi is up. `on_ready` runs once, from the loader task, when the
  * list is available. */

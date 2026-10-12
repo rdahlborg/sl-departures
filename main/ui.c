@@ -15,6 +15,7 @@
 #include "sl_api.h"
 #include "ui.h"
 #include "wifi_setup.h"
+#include "i18n.h"
 #include "metro_data.h"
 #include "ota.h"
 
@@ -64,6 +65,9 @@ static lv_obj_t *phone_panel, *phone_qr, *phone_text;
 static lv_obj_t *boot_panel, *boot_status;
 static lv_obj_t *about_panel, *about_text;
 static lv_obj_t *update_panel, *update_title, *update_bar, *update_note;
+/* Fixed labels, set again when the language changes. */
+static lv_obj_t *setup_title, *phone_title, *phone_hint, *boot_author, *about_hint, *picker_hint;
+static lang_t shown_lang;
 static uint32_t boot_started;       /* lv_tick when the UI started */
 static uint32_t phone_generation;   /* station shown when the QR code opened */
 
@@ -78,6 +82,7 @@ static void update_setup(void);
 static void update_boot(bool have_data);
 static void update_about(void);
 static void update_progress(void);
+static void apply_language(void);
 static uint32_t line_color;
 
 static lv_obj_t *box(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color, int radius)
@@ -264,15 +269,15 @@ static void build_list(lv_obj_t *scr)
 static void format_mins(char *buf, size_t len, const sl_train_t *tr, time_t now)
 {
     if (tr->cancelled) {
-        snprintf(buf, len, "Inst.");
+        snprintf(buf, len, "%s", T("Inst.", "Canc."));
         return;
     }
     /* Whole minutes, rounded down like SL's platform signs: under a
-     * minute is "Nu", 97 s is "1 min". */
+     * minute is "Nu" ("Now"), 97 s is "1 min". */
     double rem = difftime(tr->t[0], now);
     int m = rem < 60 ? 0 : (int)(rem / 60);
     if (m <= 0) {
-        snprintf(buf, len, "Nu");
+        snprintf(buf, len, "%s", T("Nu", "Now"));
     } else if (m < 60) {
         snprintf(buf, len, "%d min", m);
     } else {
@@ -334,6 +339,9 @@ static void update_cb(lv_timer_t *t)
     time_t now = time(NULL);
     char buf[16];
 
+    if (i18n_lang() != shown_lang) {
+        apply_language();
+    }
     update_setup();
     update_about();
     update_progress();
@@ -363,8 +371,9 @@ static void update_cb(lv_timer_t *t)
     lv_obj_set_style_bg_color(status_dot, lv_color_hex(dot), 0);
     /* SL's terms ask for the data source to be credited. */
     lv_label_set_text(placeholder, board_wifi_configured()
-        ? "Hämtar avgångar…\nData: Trafiklab.se"
-        : "Wi-Fi saknas. Håll knappen och välj Mobil…\neller öppna " CONFIG_INSTALLER_URL);
+        ? T("Hämtar avgångar…\nData: Trafiklab.se", "Fetching departures…\nData: Trafiklab.se")
+        : T("Wi-Fi saknas. Håll knappen och välj Mobil…\neller öppna " CONFIG_INSTALLER_URL,
+            "No Wi-Fi. Hold the button and choose Phone…\nor open " CONFIG_INSTALLER_URL));
     lv_obj_set_hidden(placeholder, have);
 
     for (int dir = 0; dir < 2; dir++) {
@@ -438,8 +447,8 @@ static void build_setup(lv_obj_t *scr)
     lv_qrcode_set_quiet_zone(setup_qr, true);
     lv_obj_set_pos(setup_qr, 12, 20);
 
-    lv_obj_t *title = text(setup_panel, &sl_font_16, COL_TEXT, "Ställ in Wi-Fi");
-    lv_obj_set_pos(title, 158, 10);
+    setup_title = text(setup_panel, &sl_font_16, COL_TEXT, "");
+    lv_obj_set_pos(setup_title, 158, 10);
 
     setup_text = text(setup_panel, &sl_font_12, COL_TEXT, "");
     lv_obj_set_width(setup_text, LCD_H_RES - 166);
@@ -474,30 +483,32 @@ static void update_setup(void)
     switch (ss.state) {
     case SETUP_STARTING:
         show_qr(NULL);
-        lv_label_set_text(setup_text, "Startar…");
+        lv_label_set_text(setup_text, T("Startar…", "Starting…"));
         break;
     case SETUP_WAITING:
         /* Standard Wi-Fi QR code: phone cameras offer to join directly. */
         snprintf(buf, sizeof(buf), "WIFI:T:WPA;S:%s;P:%s;;", ss.ap_ssid, ss.ap_password);
         show_qr(buf);
-        snprintf(buf, sizeof(buf),
-                 "1. Skanna koden med mobilens kamera.\n"
-                 "2. Välj ditt nätverk på sidan som öppnas.");
-        lv_label_set_text(setup_text, buf);
+        lv_label_set_text(setup_text, T("1. Skanna koden med mobilens kamera.\n"
+                                        "2. Välj ditt nätverk på sidan som öppnas.",
+                                        "1. Scan the code with the phone's camera.\n"
+                                        "2. Choose your network on the page that opens."));
         break;
     case SETUP_PHONE:
         show_qr("http://192.168.4.1/");
-        lv_label_set_text(setup_text, "Mobilen är ansluten.\n"
-                                      "Öppnas ingen sida? Skanna koden igen eller gå till 192.168.4.1");
+        lv_label_set_text(setup_text, T("Mobilen är ansluten.\n"
+                                        "Öppnas ingen sida? Skanna koden igen eller gå till 192.168.4.1",
+                                        "Phone connected.\n"
+                                        "No page? Scan the code again or go to 192.168.4.1"));
         break;
     case SETUP_CONNECTING:
         show_qr(NULL);
-        snprintf(buf, sizeof(buf), "Ansluter till %s…", ss.target);
+        snprintf(buf, sizeof(buf), T("Ansluter till %s…", "Connecting to %s…"), ss.target);
         lv_label_set_text(setup_text, buf);
         break;
     case SETUP_DONE:
         show_qr(NULL);
-        snprintf(buf, sizeof(buf), "Klart!\nAnsluten till %s.", ss.target);
+        snprintf(buf, sizeof(buf), T("Klart!\nAnsluten till %s.", "Done!\nConnected to %s."), ss.target);
         lv_label_set_text(setup_text, buf);
         color = COL_OK;
         break;
@@ -507,14 +518,17 @@ static void update_setup(void)
     lv_obj_set_style_text_color(setup_text, lv_color_hex(color), 0);
 
     if (ss.last_failed && (ss.state == SETUP_WAITING || ss.state == SETUP_PHONE)) {
-        snprintf(buf, sizeof(buf), "Kunde inte ansluta till %s. Försök igen.", ss.target);
+        snprintf(buf, sizeof(buf), T("Kunde inte ansluta till %s. Försök igen.",
+                                     "Couldn't connect to %s. Try again."), ss.target);
         lv_obj_set_style_text_color(setup_note, lv_color_hex(COL_ERR), 0);
     } else if (ss.state == SETUP_WAITING) {
-        snprintf(buf, sizeof(buf), "%s\nLösenord: %s\nHåll knappen: avbryt",
+        snprintf(buf, sizeof(buf), T("%s\nLösenord: %s\nHåll knappen: avbryt",
+                                     "%s\nPassword: %s\nHold the button: cancel"),
                  ss.ap_ssid, ss.ap_password);
         lv_obj_set_style_text_color(setup_note, lv_color_hex(COL_DIM), 0);
     } else {
-        snprintf(buf, sizeof(buf), "%s", ss.state == SETUP_DONE ? "" : "Håll knappen: avbryt");
+        snprintf(buf, sizeof(buf), "%s",
+                 ss.state == SETUP_DONE ? "" : T("Håll knappen: avbryt", "Hold the button: cancel"));
         lv_obj_set_style_text_color(setup_note, lv_color_hex(COL_DIM), 0);
     }
     lv_label_set_text(setup_note, buf);
@@ -530,13 +544,13 @@ static void build_phone(lv_obj_t *scr)
     lv_qrcode_set_quiet_zone(phone_qr, true);
     lv_obj_set_pos(phone_qr, 12, 20);
 
-    lv_obj_t *title = text(phone_panel, &sl_font_16, COL_TEXT, "Välj i mobilen");
-    lv_obj_set_pos(title, 158, 10);
+    phone_title = text(phone_panel, &sl_font_16, COL_TEXT, "");
+    lv_obj_set_pos(phone_title, 158, 10);
     phone_text = text(phone_panel, &sl_font_12, COL_TEXT, "");
     lv_obj_set_width(phone_text, LCD_H_RES - 166);
     lv_obj_set_pos(phone_text, 158, 34);
-    lv_obj_t *hint = text(phone_panel, &sl_font_12, COL_DIM, "Tryck på knappen: stäng");
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 158, -8);
+    phone_hint = text(phone_panel, &sl_font_12, COL_DIM, "");
+    lv_obj_align(phone_hint, LV_ALIGN_BOTTOM_LEFT, 158, -8);
     lv_obj_set_hidden(phone_panel, true);
 }
 
@@ -548,11 +562,14 @@ void ui_phone_show(void)
         snprintf(buf, sizeof(buf), "http://%s/", ip);
         lv_qrcode_update(phone_qr, buf, strlen(buf));
         lv_obj_set_hidden(phone_qr, false);
-        snprintf(buf, sizeof(buf), "Skanna koden för att välja station och Wi-Fi.\n\n"
-                                   "Mobilen måste vara på samma Wi-Fi.\n%s", ip);
+        snprintf(buf, sizeof(buf), T("Skanna koden för att välja station och Wi-Fi.\n\n"
+                                     "Mobilen måste vara på samma Wi-Fi.\n%s",
+                                     "Scan the code to choose station and Wi-Fi.\n\n"
+                                     "The phone must be on the same Wi-Fi.\n%s"), ip);
     } else {
         lv_obj_set_hidden(phone_qr, true);
-        snprintf(buf, sizeof(buf), "Tavlan är inte ansluten till Wi-Fi.");
+        snprintf(buf, sizeof(buf), "%s", T("Tavlan är inte ansluten till Wi-Fi.",
+                                           "The board isn't connected to Wi-Fi."));
     }
     lv_label_set_text(phone_text, buf);
     sl_config_t cfg;
@@ -624,8 +641,8 @@ static void build_boot(lv_obj_t *scr)
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
     lv_obj_t *ver = text(boot_panel, &sl_font_16, COL_DIM, ota_version());
     lv_obj_align(ver, LV_ALIGN_TOP_MID, 0, 80);
-    lv_obj_t *author = text(boot_panel, &sl_font_12, COL_DIM, "av " CONFIG_APP_AUTHOR);
-    lv_obj_align(author, LV_ALIGN_TOP_MID, 0, 101);
+    boot_author = text(boot_panel, &sl_font_12, COL_DIM, "");
+    lv_obj_align(boot_author, LV_ALIGN_TOP_MID, 0, 101);
     boot_status = text(boot_panel, &sl_font_12, COL_TEXT, "");
     lv_obj_set_width(boot_status, LCD_H_RES - 20);
     lv_obj_set_style_text_align(boot_status, LV_TEXT_ALIGN_CENTER, 0);
@@ -652,7 +669,8 @@ static void update_boot(bool have_data)
     if (!metro_ready()) {
         metro_status(buf, sizeof(buf));
     } else if (!have_data) {
-        strlcpy(buf, board_wifi_connected() ? "Hämtar avgångar…" : "Ansluter till Wi-Fi…",
+        strlcpy(buf, board_wifi_connected() ? T("Hämtar avgångar…", "Fetching departures…")
+                                            : T("Ansluter till Wi-Fi…", "Connecting to Wi-Fi…"),
                 sizeof(buf));
     }
     lv_label_set_text(boot_status, buf);
@@ -668,7 +686,7 @@ void ui_boot_demo(int frame)
     boot_demo = true;
     lv_anim_delete(boot_train, train_step);
     lv_obj_set_hidden(boot_panel, false);
-    lv_label_set_text(boot_status, "Hämtar avgångar…");
+    lv_label_set_text(boot_status, T("Hämtar avgångar…", "Fetching departures…"));
     /* Same easing as the running animation; the last frame is the pause. */
     lv_anim_t a;
     lv_anim_init(&a);
@@ -688,9 +706,8 @@ static void build_about(lv_obj_t *scr)
     about_text = text(about_panel, &sl_font_12, COL_TEXT, "");
     lv_obj_set_width(about_text, LCD_H_RES - 24);
     lv_obj_set_pos(about_text, 12, 36);
-    lv_obj_t *hint = text(about_panel, &sl_font_12, COL_DIM,
-                          "Håll: sök efter uppdatering · Tryck: stäng");
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 12, -8);
+    about_hint = text(about_panel, &sl_font_12, COL_DIM, "");
+    lv_obj_align(about_hint, LV_ALIGN_BOTTOM_LEFT, 12, -8);
     lv_obj_set_hidden(about_panel, true);
 }
 
@@ -705,26 +722,30 @@ static void update_about(void)
     char latest[96];
     switch (os.state) {
     case OTA_CHECKING:
-        state = "Söker efter uppdatering…";
+        state = T("Söker efter uppdatering…", "Checking for updates…");
         break;
     case OTA_UP_TO_DATE:
-        snprintf(latest, sizeof(latest), "Du har den senaste versionen (%s).", os.latest);
+        snprintf(latest, sizeof(latest), T("Du har den senaste versionen (%s).",
+                                           "You have the latest version (%s)."), os.latest);
         state = latest;
         break;
     case OTA_FAILED:
-        state = "Kunde inte söka efter uppdateringar. Försök igen senare.";
+        state = T("Kunde inte söka efter uppdateringar. Försök igen senare.",
+                  "Couldn't check for updates. Try again later.");
         break;
     case OTA_INSTALL_FAILED:
-        snprintf(latest, sizeof(latest), "Uppdateringen till %s misslyckades. Försök igen senare.",
-                 os.latest);
+        snprintf(latest, sizeof(latest), T("Uppdateringen till %s misslyckades. Försök igen senare.",
+                                           "The update to %s failed. Try again later."), os.latest);
         state = latest;
         break;
     default:
-        state = "Nya versioner installeras automatiskt på natten.";
+        state = T("Nya versioner installeras automatiskt på natten.",
+                  "New versions install automatically at night.");
     }
     const char *ip = board_wifi_ip();
     char buf[256];
-    snprintf(buf, sizeof(buf), "Version %s av %s\n%s.local%s%s\n\n%s\n\nData: Trafiklab.se",
+    snprintf(buf, sizeof(buf), T("Version %s av %s\n%s.local%s%s\n\n%s\n\nData: Trafiklab.se",
+                                 "Version %s by %s\n%s.local%s%s\n\n%s\n\nData: Trafiklab.se"),
              ota_version(), CONFIG_APP_AUTHOR, board_hostname(), ip[0] ? " · " : "", ip, state);
     lv_label_set_text(about_text, buf);
 }
@@ -771,14 +792,15 @@ static void update_progress(void)
     }
     char buf[48];
     if (os.state == OTA_DONE) {
-        lv_label_set_text(update_title, "Startar om…");
+        lv_label_set_text(update_title, T("Startar om…", "Restarting…"));
         lv_bar_set_value(update_bar, 100, LV_ANIM_OFF);
     } else {
-        snprintf(buf, sizeof(buf), "Uppdaterar till %s… %d %%", os.latest, os.progress);
+        snprintf(buf, sizeof(buf), T("Uppdaterar till %s… %d %%", "Updating to %s… %d %%"), os.latest,
+                 os.progress);
         lv_label_set_text(update_title, buf);
         lv_bar_set_value(update_bar, os.progress, LV_ANIM_ON);
     }
-    lv_label_set_text(update_note, "Dra inte ur sladden.");
+    lv_label_set_text(update_note, T("Dra inte ur sladden.", "Don't unplug the cable."));
 }
 
 static void build_picker(lv_obj_t *scr)
@@ -798,8 +820,8 @@ static void build_picker(lv_obj_t *scr)
     lv_obj_set_style_radius(picker_roller, 6, LV_PART_SELECTED);
     lv_obj_align(picker_roller, LV_ALIGN_CENTER, 0, 2);
 
-    lv_obj_t *hint = text(picker, &sl_font_12, COL_DIM, "Tryck: nästa · Dubbel: föregående · Håll: välj");
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -6);
+    picker_hint = text(picker, &sl_font_12, COL_DIM, "");
+    lv_obj_align(picker_hint, LV_ALIGN_BOTTOM_MID, 0, -6);
     lv_obj_set_hidden(picker, true);
 }
 
@@ -820,6 +842,20 @@ void ui_picker_select(int index)
 void ui_picker_hide(void)
 {
     lv_obj_set_hidden(picker, true);
+}
+
+/* Fixed labels in the current language. The rest are set as they update. */
+static void apply_language(void)
+{
+    shown_lang = i18n_lang();
+    lv_label_set_text(setup_title, T("Ställ in Wi-Fi", "Set up Wi-Fi"));
+    lv_label_set_text(phone_title, T("Välj i mobilen", "Use your phone"));
+    lv_label_set_text(phone_hint, T("Tryck på knappen: stäng", "Press the button: close"));
+    lv_label_set_text(boot_author, T("av " CONFIG_APP_AUTHOR, "by " CONFIG_APP_AUTHOR));
+    lv_label_set_text(about_hint, T("Håll: sök efter uppdatering · Tryck: stäng",
+                                    "Hold: check for updates · Press: close"));
+    lv_label_set_text(picker_hint, T("Tryck: nästa · Dubbel: föregående · Håll: välj",
+                                     "Press: next · Double: previous · Hold: choose"));
 }
 
 void ui_init(void)
@@ -858,6 +894,7 @@ void ui_init(void)
     build_setup(scr);
     build_progress(scr);
 
+    apply_language();
     update_cb(NULL);
     lv_timer_create(update_cb, 250, NULL);
 }

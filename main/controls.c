@@ -8,7 +8,8 @@
  *   about screen     click: close          hold: check for updates
  *
  * The line picker ends with "Mobil…", which shows a QR code for the
- * settings page (or starts phone setup when offline), and "Om / Uppdatera…".
+ * settings page (or starts phone setup when offline), "English" (or
+ * "Svenska"), which switches language, and "Om / Uppdatera…".
  *
  * The picker closes without changes after PICKER_TIMEOUT_MS of inactivity.
  */
@@ -25,6 +26,7 @@
 #include "ota.h"
 #include "board.h"
 #include "controls.h"
+#include "i18n.h"
 
 #define PIN_BOOT            9
 #define PICKER_TIMEOUT_MS   30000
@@ -100,18 +102,21 @@ static void step_station(int delta)
 
 /* Entries after the line groups in the line picker. */
 #define PICK_PHONE  METRO_N_GROUPS
-#define PICK_ABOUT  (METRO_N_GROUPS + 1)
-#define PICK_COUNT  (METRO_N_GROUPS + 2)
+#define PICK_LANG   (METRO_N_GROUPS + 1)
+#define PICK_ABOUT  (METRO_N_GROUPS + 2)
+#define PICK_COUNT  (METRO_N_GROUPS + 3)
 
 static void show_line_picker(void)
 {
     options[0] = '\0';
     for (int i = 0; i < METRO_N_GROUPS; i++) {
-        strlcat(options, metro_groups[i].name, sizeof(options));
+        strlcat(options, metro_group_name(i), sizeof(options));
         strlcat(options, "\n", sizeof(options));
     }
-    strlcat(options, "Mobil…\nOm / Uppdatera…", sizeof(options));
-    ui_picker_show("Välj linje", options, pick_index,
+    /* The other language, named in that language. */
+    strlcat(options, T("Mobil…\nEnglish\nOm / Uppdatera…", "Phone…\nSvenska\nAbout / Update…"),
+            sizeof(options));
+    ui_picker_show(T("Välj linje", "Choose line"), options, pick_index,
                    metro_groups[pick_index < METRO_N_GROUPS ? pick_index : 0].color);
 }
 
@@ -123,7 +128,7 @@ static void show_station_picker(void)
         if (i) strlcat(options, "\n", sizeof(options));
         strlcat(options, metro_station_name(g->stations[i]), sizeof(options));
     }
-    ui_picker_show(g->name, options, pick_index, g->color);
+    ui_picker_show(metro_group_name(pick_group), options, pick_index, g->color);
 }
 
 static int picker_count(void)
@@ -209,6 +214,10 @@ static void handle(event_t ev)
                 mode = MODE_BOARD;
                 wifi_setup_start();
             }
+        } else if (mode == MODE_PICK_LINE && pick_index == PICK_LANG) {
+            /* Switch and show the list again, now in the other language. */
+            i18n_set(i18n_lang() == LANG_EN ? LANG_SV : LANG_EN);
+            show_line_picker();
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_ABOUT) {
             esp_timer_stop(timeout_timer);
             ui_picker_hide();
