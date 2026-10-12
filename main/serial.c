@@ -6,6 +6,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
+#include "board.h"
 #include "controls.h"
 #include "improv.h"
 #include "screenshot.h"
@@ -29,6 +30,15 @@ static void command(uint8_t c)
     }
     if (c == 'S') {
         screenshot_dump();
+    } else if (c == 'W') {
+        static board_ap_t aps[20];
+        int n = board_wifi_scan(aps, 20);
+        for (int i = 0; i < n; i++) {
+            ESP_LOGI(TAG, "%4d dBm %s \"%s\"", aps[i].rssi, aps[i].secure ? "secure" : "open",
+                     aps[i].ssid);
+            ESP_LOG_BUFFER_HEX(TAG, aps[i].ssid, strlen(aps[i].ssid));
+        }
+        ESP_LOGI(TAG, "%d networks", n);
     } else {
         controls_simulate(c);
     }

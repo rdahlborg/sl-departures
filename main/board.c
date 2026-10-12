@@ -140,6 +140,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             esp_wifi_connect();
         }
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        /* Log only when the reason changes, retries come back to back. */
+        static uint8_t last_reason;
+        wifi_event_sta_disconnected_t *ev = data;
+        if (ev->reason != last_reason) {
+            ESP_LOGW(TAG, "Disconnected from \"%.*s\", reason %d", ev->ssid_len,
+                     (char *)ev->ssid, ev->reason);
+            last_reason = ev->reason;
+        }
         wifi_connected = false;
         fail_count++;
         xEventGroupSetBits(wifi_events, BIT_FAILED);
@@ -203,7 +211,10 @@ void board_wifi_init(void)
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     }
     wifi_configured = cfg.sta.ssid[0] != '\0';
-    if (!wifi_configured) {
+    if (wifi_configured) {
+        ESP_LOGI(TAG, "Saved network \"%s\"", (char *)cfg.sta.ssid);
+        ESP_LOG_BUFFER_HEX(TAG, cfg.sta.ssid, strlen((char *)cfg.sta.ssid));
+    } else {
         ESP_LOGW(TAG, "No Wi-Fi configured, waiting for Improv provisioning");
     }
     ESP_ERROR_CHECK(esp_wifi_start());
