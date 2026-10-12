@@ -68,6 +68,7 @@ typedef struct {
     sl_dir_t dir[2];
     time_t   updated;   /* 0 until the first successful poll */
     uint32_t generation;
+    bool     quiet;     /* nothing due within the hour, so polled rarely */
 } sl_state_t;
 
 /* Create the state lock; call before anything reads SL state. Until

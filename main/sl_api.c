@@ -8,8 +8,10 @@
  * listing one of those is where it stops next on its way out.
  *
  * Home and the nearest station on each side are fetched every
- * CONFIG_SL_POLL_SECONDS, the stations further out every SLOW_EVERY:th time:
- * arrivals near home show up quickly without loading SL's free API more.
+ * CONFIG_SL_POLL_SECONDS, the stations further out at most every
+ * OUTER_POLL_S. When home has no departures in the next hour, as at night,
+ * only home is fetched, every QUIET_POLL_S. SL's API is free and keyless,
+ * and asks not to be loaded more than needed.
  * Responses are read as a stream (json_stream.c), so even the largest
  * interchange station answers need no buffer.
  */
@@ -26,7 +28,7 @@
 #include "json_stream.h"
 #include "sl_api.h"
 
-#define API_HOME   "https://transport.integration.sl.se/v1/sites/%d/departures?transport=METRO&direction=%d&forecast=60"
+#define API_HOME   "https://transport.integration.sl.se/v1/sites/%d/departures?transport=METRO&forecast=60"
 #define API_NEAR   "https://transport.integration.sl.se/v1/sites/%d/departures?transport=METRO&forecast=30"
 /* Used when there is no later station to measure the segment time from. */
 #define DEFAULT_SEGMENT_S 90
@@ -169,14 +171,18 @@ static time_t dep_time(const departure_t *d)
 typedef struct {
     const sl_config_t *cfg;
     const metro_group_t *g;
-    int dir;
-    sl_dir_t *out;
+    sl_dir_t *dirs;
 } home_ctx_t;
 
+/* Both directions come in one answer, told apart by direction_code. */
 static void on_home(void *ctx, const departure_t *d)
 {
     home_ctx_t *h = ctx;
-    sl_dir_t *out = h->out;
+    int dir = d->dir_code == direction_code[0] ? 0 : d->dir_code == direction_code[1] ? 1 : -1;
+    if (dir < 0) {
+        return;
+    }
+    sl_dir_t *out = &h->dirs[dir];
     /* Interchanges like T-Centralen list every line. */
     if (out->n == SL_MAX_TRAINS || !d->journey || !on_group(h->g, d->line)) {
         return;
@@ -184,8 +190,8 @@ static void on_home(void *ctx, const departure_t *d)
     sl_train_t *tr = &out->trains[out->n++];
     tr->journey = d->journey;
     tr->line = d->line;
-    while (tr->reach < h->cfg->n_up[h->dir] &&
-           line_calls_at(h->g, d->line, h->cfg->up[h->dir][tr->reach])) {
+    while (tr->reach < h->cfg->n_up[dir] &&
+           line_calls_at(h->g, d->line, h->cfg->up[dir][tr->reach])) {
         tr->reach++;
     }
     strlcpy(tr->dest, d->dest[0] ? d->dest : "?", sizeof(tr->dest));
@@ -206,10 +212,13 @@ typedef struct {
 } candidate_t;
 
 /* What a neighbouring station listed when it was last fetched. The nearest
- * station on each side is fetched on every poll, the others on every
- * SLOW_EVERY:th, so their answers are kept in between. */
+ * station on each side is fetched on every poll, the others at most every
+ * OUTER_POLL_S, so their answers are kept in between. */
 #define CACHE_MAX   32
-#define SLOW_EVERY  3
+#define OUTER_POLL_S 30
+#define SLOW_EVERY  (CONFIG_SL_POLL_SECONDS >= OUTER_POLL_S ? 1 : OUTER_POLL_S / CONFIG_SL_POLL_SECONDS)
+/* With nothing due at home within the hour, check this often. */
+#define QUIET_POLL_S 300
 /* A kept answer whose time is this far past is probably for a train that
  * has since passed; it is ignored until the station is fetched again. */
 #define CACHE_STALE_S 20
@@ -334,7 +343,8 @@ static void pick_departed(const sl_config_t *cfg, const metro_group_t *g, int di
     }
 }
 
-/* Fetch home and the nearest neighbours; with `full`, all neighbours. */
+/* Fetch home and, if it has departures, the nearest neighbours; with
+ * `full`, all neighbours. */
 static bool poll_all(esp_http_client_handle_t client, const sl_config_t *cfg, sl_dir_t *dirs,
                      bool full)
 {
@@ -345,11 +355,15 @@ static bool poll_all(esp_http_client_handle_t client, const sl_config_t *cfg, sl
     for (int dir = 0; dir < 2; dir++) {
         dirs[dir].n_up = cfg->n_up[dir];
         dirs[dir].n_down = cfg->n_up[!dir];
-        home_ctx_t h = { cfg, g, dir, &dirs[dir] };
-        snprintf(url, sizeof(url), API_HOME, cfg->home, direction_code[dir]);
-        if (!fetch(client, url, on_home, &h)) {
-            return false;
-        }
+    }
+    home_ctx_t h = { cfg, g, dirs };
+    snprintf(url, sizeof(url), API_HOME, cfg->home);
+    if (!fetch(client, url, on_home, &h)) {
+        return false;
+    }
+    /* No trains due: nothing on the way to place either. */
+    if (dirs[0].n == 0 && dirs[1].n == 0) {
+        return true;
     }
     for (int side = 0; side < 2; side++) {
         for (int k = 1; k <= cfg->n_up[side] && (k == 1 || full); k++) {
@@ -413,18 +427,30 @@ static void poll_task(void *arg)
         }
         sl_config_t cfg;
         sl_get_config(&cfg);
-        /* Everything on a new station, then the outer neighbours every
-         * SLOW_EVERY:th poll. */
+        /* Everything on a new station or after a quiet spell, then the
+         * outer neighbours every SLOW_EVERY:th poll. */
         static uint32_t polled_generation;
         static int round;
-        bool full = cfg.generation != polled_generation || round % SLOW_EVERY == 0;
+        static bool quiet;
+        bool full = cfg.generation != polled_generation || quiet || round % SLOW_EVERY == 0;
         int64_t t0 = esp_log_timestamp();
         bool ok = poll_all(client, &cfg, next.dir, full);
         if (ok) {
             polled_generation = cfg.generation;
             round = full ? 1 : round + 1;
+            bool none = next.dir[0].n == 0 && next.dir[1].n == 0;
+            if (none != quiet) {
+                if (none) {
+                    ESP_LOGI(TAG, "No departures within the hour, checking every %d s",
+                             QUIET_POLL_S);
+                } else {
+                    ESP_LOGI(TAG, "Departures again, back to every %d s", CONFIG_SL_POLL_SECONDS);
+                }
+                quiet = none;
+            }
         }
         if (ok) {
+            next.quiet = quiet;
             next.updated = time(NULL);
             ever_succeeded = true;
             next.generation = cfg.generation;
@@ -443,7 +469,8 @@ static void poll_task(void *arg)
             esp_http_client_close(client);
         }
         /* sl_select() wakes us early. */
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ok ? CONFIG_SL_POLL_SECONDS * 1000 : 5000));
+        int wait_s = !ok ? 5 : quiet ? QUIET_POLL_S : CONFIG_SL_POLL_SECONDS;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_s * 1000));
     }
 }
 

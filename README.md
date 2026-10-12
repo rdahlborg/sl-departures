@@ -153,9 +153,11 @@ to five stations on each side of yours. For a train on its way in, the
 furthest one that still lists it is where it stops next. The same answers list
 trains going the other way, which have already passed your station; for those,
 the nearest station listing them is their next stop. Its expected arrival there, and the time
-between stations, place it along the track. The API needs no key. Your station
-and the nearest one on each side are fetched every 10 seconds, the stations
-further out every 30 seconds, about one request every two seconds in all.
+between stations, place it along the track. The API needs no key, but asks not to
+be loaded more than needed. Every 30 seconds the board fetches your station
+(both directions in one request) and up to four stations on each side, nine
+requests in all. When your station has nothing due within the hour, as at
+night, it only checks your station every 5 minutes.
 
 Where lines split, the map follows one branch. Trains from the other branch
 appear in the departure list and join the map where the branches meet.

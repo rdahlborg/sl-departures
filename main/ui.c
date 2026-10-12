@@ -40,6 +40,8 @@ LV_FONT_DECLARE(sl_font_22);
 #define LIST_Y        100
 #define LIST_ROWS     2
 #define STALE_S       90
+/* At night SL is only checked every 5 minutes (see sl_api.c). */
+#define QUIET_STALE_S (300 + STALE_S)
 
 static lv_obj_t *title_label;
 static lv_obj_t *line_badge, *line_badge_label;
@@ -367,7 +369,8 @@ static void update_cb(lv_timer_t *t)
     bool have = sl_snapshot(&st);
     update_boot(have);
     uint32_t dot = !board_wifi_connected() ? COL_ERR
-                 : !have || difftime(now, st.updated) > STALE_S ? COL_WARN : COL_OK;
+                 : !have || difftime(now, st.updated) > (st.quiet ? QUIET_STALE_S : STALE_S)
+                 ? COL_WARN : COL_OK;
     lv_obj_set_style_bg_color(status_dot, lv_color_hex(dot), 0);
     /* SL's terms ask for the data source to be credited. */
     lv_label_set_text(placeholder, board_wifi_configured()
