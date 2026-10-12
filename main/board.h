@@ -8,12 +8,15 @@
 /* Initialise the ST7789 panel, LVGL and the backlight. Returns the LVGL display. */
 lv_display_t *board_display_init(void);
 
-/* Connect to Wi-Fi and start SNTP. Non-blocking. Uses the credentials
- * saved in NVS, falling back to CONFIG_WIFI_SSID for developer builds. */
+/* Connect to Wi-Fi and start SNTP. Non-blocking. Joins the strongest of
+ * the saved networks, falling back to CONFIG_WIFI_SSID for developer builds. */
 void board_wifi_init(void);
 
 bool board_wifi_connected(void);
 bool board_wifi_configured(void);
+
+/* Name of the network we're on; empty when offline. */
+const char *board_wifi_ssid(void);
 
 /* Address on the home network, e.g. "192.168.1.167"; empty when offline. */
 const char *board_wifi_ip(void);
@@ -22,9 +25,23 @@ const char *board_wifi_ip(void);
  * Known from boot, unlike the IP address. */
 const char *board_hostname(void);
 
-/* Save new credentials and try them. Blocks until connected (true) or
- * failed/timed out (false). Used by Improv provisioning. */
+/* Try new credentials, and save them to the list of networks if they work.
+ * Blocks until connected (true) or failed/timed out (false). Used by Improv
+ * provisioning and phone setup. */
 bool board_wifi_provision(const char *ssid, const char *password, int timeout_ms);
+
+#define BOARD_MAX_NETWORKS 5
+
+/* Names of the saved networks, most recently used first. Returns how many. */
+int board_wifi_saved(char ssids[][33], int max);
+
+/* Remove a saved network. One in use stays connected until it drops.
+ * Returns false if it wasn't saved. */
+bool board_wifi_forget(const char *ssid);
+
+/* Save a network without trying it, for use when the current one is lost.
+ * Replaces the password if it was saved already. */
+void board_wifi_add(const char *ssid, const char *password);
 
 typedef struct {
     char ssid[33];

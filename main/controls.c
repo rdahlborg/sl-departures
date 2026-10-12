@@ -8,7 +8,7 @@
  *   about screen     click: close          hold: check for updates
  *
  * The line picker ends with "Mobil…", which shows a QR code for the
- * settings page, "Wi-Fi…", which starts phone setup, and "Om / Uppdatera…".
+ * settings page (or starts phone setup when offline), and "Om / Uppdatera…".
  *
  * The picker closes without changes after PICKER_TIMEOUT_MS of inactivity.
  */
@@ -23,6 +23,7 @@
 #include "ui.h"
 #include "wifi_setup.h"
 #include "ota.h"
+#include "board.h"
 #include "controls.h"
 
 #define PIN_BOOT            9
@@ -99,9 +100,8 @@ static void step_station(int delta)
 
 /* Entries after the line groups in the line picker. */
 #define PICK_PHONE  METRO_N_GROUPS
-#define PICK_WIFI   (METRO_N_GROUPS + 1)
-#define PICK_ABOUT  (METRO_N_GROUPS + 2)
-#define PICK_COUNT  (METRO_N_GROUPS + 3)
+#define PICK_ABOUT  (METRO_N_GROUPS + 1)
+#define PICK_COUNT  (METRO_N_GROUPS + 2)
 
 static void show_line_picker(void)
 {
@@ -110,7 +110,7 @@ static void show_line_picker(void)
         strlcat(options, metro_groups[i].name, sizeof(options));
         strlcat(options, "\n", sizeof(options));
     }
-    strlcat(options, "Mobil…\nWi-Fi…\nOm / Uppdatera…", sizeof(options));
+    strlcat(options, "Mobil…\nOm / Uppdatera…", sizeof(options));
     ui_picker_show("Välj linje", options, pick_index,
                    metro_groups[pick_index < METRO_N_GROUPS ? pick_index : 0].color);
 }
@@ -200,8 +200,15 @@ static void handle(event_t ev)
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_PHONE) {
             esp_timer_stop(timeout_timer);
             ui_picker_hide();
-            mode = MODE_PHONE;
-            ui_phone_show();
+            /* Online, the settings page is on the home network; offline,
+             * the board's own hotspot serves it. */
+            if (board_wifi_connected()) {
+                mode = MODE_PHONE;
+                ui_phone_show();
+            } else {
+                mode = MODE_BOARD;
+                wifi_setup_start();
+            }
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_ABOUT) {
             esp_timer_stop(timeout_timer);
             ui_picker_hide();
@@ -209,11 +216,6 @@ static void handle(event_t ev)
             ui_about_show();
         } else if (mode == MODE_PICK_LINE && pick_index < METRO_N_GROUPS && !metro_ready()) {
             /* No stations yet: stay in the list. */
-        } else if (mode == MODE_PICK_LINE && pick_index == PICK_WIFI) {
-            esp_timer_stop(timeout_timer);
-            ui_picker_hide();
-            mode = MODE_BOARD;
-            wifi_setup_start();
         } else if (mode == MODE_PICK_LINE) {
             pick_group = pick_index;
             /* Start on the current station if it is on this line too. */

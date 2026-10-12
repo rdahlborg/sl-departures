@@ -364,7 +364,7 @@ static void update_cb(lv_timer_t *t)
     /* SL's terms ask for the data source to be credited. */
     lv_label_set_text(placeholder, board_wifi_configured()
         ? "Hämtar avgångar…\nData: Trafiklab.se"
-        : "Wi-Fi saknas. Håll knappen och välj Wi-Fi…\neller öppna " CONFIG_INSTALLER_URL);
+        : "Wi-Fi saknas. Håll knappen och välj Mobil…\neller öppna " CONFIG_INSTALLER_URL);
     lv_obj_set_hidden(placeholder, have);
 
     for (int dir = 0; dir < 2; dir++) {
@@ -548,7 +548,7 @@ void ui_phone_show(void)
         snprintf(buf, sizeof(buf), "http://%s/", ip);
         lv_qrcode_update(phone_qr, buf, strlen(buf));
         lv_obj_set_hidden(phone_qr, false);
-        snprintf(buf, sizeof(buf), "Skanna koden för att välja linje och station.\n\n"
+        snprintf(buf, sizeof(buf), "Skanna koden för att välja station och Wi-Fi.\n\n"
                                    "Mobilen måste vara på samma Wi-Fi.\n%s", ip);
     } else {
         lv_obj_set_hidden(phone_qr, true);

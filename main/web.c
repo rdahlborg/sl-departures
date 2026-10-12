@@ -5,8 +5,9 @@
  *   the home network and the line and station to show.
  *
  *   The rest of the time it serves a settings page on the home network for
- *   changing line and station. Wi-Fi can only be changed through setup, so
- *   someone else on the network can at most change the station.
+ *   changing line and station and managing the saved Wi-Fi networks.
+ *   Networks added there are saved without being tried, since trying one
+ *   would take the board, and the phone's page, off the current network.
  *
  * Forms are sent with fetch(): iOS warns that a password form on a plain
  * http page "is not secure", and in the captive portal sheet "Send Anyway"
@@ -17,6 +18,7 @@
 #include <string.h>
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "board.h"
 #include "controls.h"
 #include "metro_data.h"
 #include "sl_api.h"
@@ -40,6 +42,9 @@ static const char PAGE_HEAD[] =
     "border-radius:8px;background:#179c4c;color:#fff}button:disabled{opacity:.6}"
     ".bar{display:flex;gap:6px;margin-bottom:18px}.bar i{width:28px;height:6px;border-radius:3px}"
     "#other{display:none}.err{color:#ff8a8f}.ok{color:#5fd38d}"
+    ".net{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #2c4237}"
+    ".net span{flex:1;overflow-wrap:anywhere}.net small{color:#93a59c}"
+    ".net button{width:auto;margin:0;padding:8px 14px;background:#2c4237}"
     "</style></head><body><main>"
     "<div class=bar><i style=background:#179c4c></i><i style=background:#d71d24></i>"
     "<i style=background:#0089ca></i></div>";
@@ -186,6 +191,69 @@ static void send_station_picker(httpd_req_t *req)
         "</script>");
 }
 
+/* Saved networks, each with a button to forget it. */
+static void send_saved_networks(httpd_req_t *req)
+{
+    char saved[BOARD_MAX_NETWORKS][33];
+    int n = board_wifi_saved(saved, BOARD_MAX_NETWORKS);
+    if (n == 0) {
+        return;
+    }
+    const char *current = board_wifi_ssid();
+    char buf[96];
+    snprintf(buf, sizeof(buf), "<p>Tavlan minns upp till %d nätverk och väljer det "
+                               "starkaste den hittar.</p>", BOARD_MAX_NETWORKS);
+    httpd_resp_sendstr_chunk(req, buf);
+    for (int i = 0; i < n; i++) {
+        httpd_resp_sendstr_chunk(req, "<div class=net><span>");
+        send_escaped(req, saved[i]);
+        if (!strcmp(saved[i], current)) {
+            httpd_resp_sendstr_chunk(req, " <small>ansluten</small>");
+        }
+        httpd_resp_sendstr_chunk(req, "</span><button type=button data-ssid=\"");
+        send_escaped(req, saved[i]);
+        httpd_resp_sendstr_chunk(req, "\">Glöm</button></div>");
+    }
+    httpd_resp_sendstr_chunk(req,
+        "<script>document.querySelectorAll('.net button').forEach(function(b){"
+        "b.onclick=function(){b.disabled=true;"
+        "fetch('/forget',{method:'POST',body:new URLSearchParams({ssid:b.dataset.ssid})})"
+        ".then(function(r){return r.json()}).then(function(j){"
+        "if(j.ok){b.parentNode.remove()}else{b.disabled=false}})"
+        ".catch(function(){b.disabled=false})}})</script>");
+}
+
+/* JSON string contents, escaped. */
+static void send_json_escaped(httpd_req_t *req, const char *s)
+{
+    char c[7];
+    for (; *s; s++) {
+        if (*s == '"' || *s == '\\') {
+            snprintf(c, sizeof(c), "\\%c", *s);
+        } else if ((unsigned char)*s < 0x20) {
+            snprintf(c, sizeof(c), "\\u%04x", *s);
+        } else {
+            c[0] = *s;
+            c[1] = '\0';
+        }
+        httpd_resp_sendstr_chunk(req, c);
+    }
+}
+
+/* Network name from a form: the menu choice, or the typed name for
+ * "Annat nätverk…". False if the name or password is unusable. */
+static bool form_network(const char *body, char ssid[33], char pass[65])
+{
+    char other[33];
+    form_value(body, "ssid", ssid, 33);
+    form_value(body, "other", other, sizeof(other));
+    form_value(body, "password", pass, 65);
+    if (ssid[0] == '\0') {
+        strcpy(ssid, other);
+    }
+    return ssid[0] != '\0' && (pass[0] == '\0' || strlen(pass) >= 8);
+}
+
 /* Submit a form with fetch() and hand the JSON answer to done(). */
 static const char SUBMIT_JS[] =
     "function submit(f,busy,done){f.onsubmit=function(e){e.preventDefault();"
@@ -229,7 +297,12 @@ static esp_err_t setup_page(httpd_req_t *req)
                                   "<label for=pw>Lösenord</label>"
                                   "<input id=pw name=password type=password autocomplete=off>");
     send_station_picker(req);
-    httpd_resp_sendstr_chunk(req, "<button>Anslut</button></form></div>"
+    httpd_resp_sendstr_chunk(req, "<button>Anslut</button></form>");
+    if (board_wifi_configured()) {
+        httpd_resp_sendstr_chunk(req, "<h2>Sparade nätverk</h2>");
+        send_saved_networks(req);
+    }
+    httpd_resp_sendstr_chunk(req, "</div>"
         "<div id=wait hidden><h1 id=t></h1><p id=m>Det tar upp till 20 sekunder. "
         "Mobilen kan tappa anslutningen under tiden, titta då på tavlans skärm.</p></div>");
     if (n == 0) {
@@ -261,15 +334,9 @@ static esp_err_t connect_post(httpd_req_t *req)
     if (!wifi_setup_active() || !read_body(req, body, sizeof(body))) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
     }
-    char ssid[33], other[33], pass[65];
-    form_value(body, "ssid", ssid, sizeof(ssid));
-    form_value(body, "other", other, sizeof(other));
-    form_value(body, "password", pass, sizeof(pass));
-    if (ssid[0] == '\0') {
-        strcpy(ssid, other);
-    }
+    char ssid[33], pass[65];
     httpd_resp_set_type(req, "application/json");
-    if (ssid[0] == '\0' || (pass[0] && strlen(pass) < 8)) {
+    if (!form_network(body, ssid, pass)) {
         return httpd_resp_sendstr(req, "{\"ok\":false}");
     }
     /* Show the chosen station as soon as the board is online. */
@@ -277,21 +344,63 @@ static esp_err_t connect_post(httpd_req_t *req)
     wifi_setup_submit(ssid, pass);
 
     httpd_resp_sendstr_chunk(req, "{\"ok\":true,\"ssid\":\"");
-    /* JSON-escape the network name. */
-    char c[7];
-    for (const char *p = ssid; *p; p++) {
-        if (*p == '"' || *p == '\\') {
-            snprintf(c, sizeof(c), "\\%c", *p);
-        } else if ((unsigned char)*p < 0x20) {
-            snprintf(c, sizeof(c), "\\u%04x", *p);
-        } else {
-            c[0] = *p;
-            c[1] = '\0';
-        }
-        httpd_resp_sendstr_chunk(req, c);
-    }
+    send_json_escaped(req, ssid);
     httpd_resp_sendstr_chunk(req, "\"}");
     return httpd_resp_sendstr_chunk(req, NULL);
+}
+
+static esp_err_t add_post(httpd_req_t *req)
+{
+    char body[512], ssid[33], pass[65];
+    httpd_resp_set_type(req, "application/json");
+    if (!read_body(req, body, sizeof(body)) || !form_network(body, ssid, pass)) {
+        return httpd_resp_sendstr(req, "{\"ok\":false}");
+    }
+    board_wifi_add(ssid, pass);
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
+static int by_rssi(const void *a, const void *b)
+{
+    return ((const board_ap_t *)b)->rssi - ((const board_ap_t *)a)->rssi;
+}
+
+/* Networks in range, strongest first, as a JSON list of names. */
+static esp_err_t networks_get(httpd_req_t *req)
+{
+    static board_ap_t aps[20];
+    int n = board_wifi_scan(aps, 20);
+    qsort(aps, n, sizeof(aps[0]), by_rssi);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_sendstr_chunk(req, "[");
+    int sent = 0;
+    for (int i = 0; i < n; i++) {
+        /* The same network often shows up once per access point. */
+        bool dup = false;
+        for (int j = 0; j < i && !dup; j++) {
+            dup = !strcmp(aps[j].ssid, aps[i].ssid);
+        }
+        if (dup) {
+            continue;
+        }
+        httpd_resp_sendstr_chunk(req, sent++ ? ",\"" : "\"");
+        send_json_escaped(req, aps[i].ssid);
+        httpd_resp_sendstr_chunk(req, "\"");
+    }
+    httpd_resp_sendstr_chunk(req, "]");
+    return httpd_resp_sendstr_chunk(req, NULL);
+}
+
+static esp_err_t forget_post(httpd_req_t *req)
+{
+    char body[128], ssid[33];
+    httpd_resp_set_type(req, "application/json");
+    if (!read_body(req, body, sizeof(body)) || !form_value(body, "ssid", ssid, sizeof(ssid)) ||
+        !board_wifi_forget(ssid)) {
+        return httpd_resp_sendstr(req, "{\"ok\":false}");
+    }
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
 static esp_err_t status_get(httpd_req_t *req)
@@ -318,15 +427,35 @@ static esp_err_t settings_page(httpd_req_t *req)
                                   "<form method=post action=/station>");
     send_station_picker(req);
     httpd_resp_sendstr_chunk(req, "<button>Visa på tavlan</button></form>"
-                                  "<p id=r style='margin-top:16px'></p>"
-                                  "<h2>Byta Wi-Fi?</h2><p>Håll knappen på tavlan, gå till "
-                                  "<b>Wi-Fi…</b> sist i listan och håll igen.</p><script>");
+                                  "<p id=r style='margin-top:16px'></p><h2>Wi-Fi</h2>");
+    send_saved_networks(req);
+    httpd_resp_sendstr_chunk(req,
+        "<button type=button id=addb>Lägg till nätverk</button>"
+        "<form id=add method=post action=/add hidden>"
+        "<label for=ns>Nätverk</label><select id=ns name=ssid>"
+        "<option value=''>Annat nätverk…</option></select>"
+        "<input id=other name=other placeholder='Nätverkets namn' autocapitalize=off autocorrect=off>"
+        "<label for=npw>Lösenord</label>"
+        "<input id=npw name=password type=password autocomplete=off>"
+        "<p style='margin-top:12px'>Tavlan byter till nätverket när det nuvarande försvinner, "
+        "och provar lösenordet först då.</p>"
+        "<button>Spara</button></form><p id=ar style='margin-top:16px'></p><script>");
     httpd_resp_sendstr_chunk(req, SUBMIT_JS);
     httpd_resp_sendstr_chunk(req,
         "var R=document.getElementById('r');"
         "submit(document.querySelector('form'),'Sparar…',function(j){"
         "if(j&&j.ok){R.className='ok';R.textContent='Tavlan visar nu '+j.name+'.';S=+s.value}"
-        "else{R.className='err';R.textContent='Det gick inte. Försök igen.'}})"
+        "else{R.className='err';R.textContent='Det gick inte. Försök igen.'}});"
+        "var A=document.getElementById('add'),NS=document.getElementById('ns'),"
+        "O=document.getElementById('other'),AR=document.getElementById('ar');"
+        "function oth(){O.style.display=NS.value==''?'block':'none'}NS.onchange=oth;"
+        "document.getElementById('addb').onclick=function(){this.hidden=true;A.hidden=false;oth();"
+        "AR.textContent='Söker efter nätverk…';"
+        "fetch('/networks').then(function(r){return r.json()}).then(function(l){"
+        "l.forEach(function(x,i){NS.add(new Option(x,x),i)});NS.selectedIndex=0;oth();"
+        "AR.textContent=''}).catch(function(){AR.textContent=''})};"
+        "submit(A,'Sparar…',function(j){if(j&&j.ok){location.reload();return}"
+        "AR.className='err';AR.textContent='Det gick inte. Lösenordet ska ha minst 8 tecken.'})"
         "</script>");
     httpd_resp_sendstr_chunk(req, PAGE_TAIL);
     return httpd_resp_sendstr_chunk(req, NULL);
@@ -391,6 +520,9 @@ void web_start(void)
         { .uri = "/",        .method = HTTP_GET,  .handler = root_get },
         { .uri = "/connect", .method = HTTP_POST, .handler = connect_post },
         { .uri = "/status",  .method = HTTP_GET,  .handler = status_get },
+        { .uri = "/forget",  .method = HTTP_POST, .handler = forget_post },
+        { .uri = "/add",     .method = HTTP_POST, .handler = add_post },
+        { .uri = "/networks", .method = HTTP_GET, .handler = networks_get },
         { .uri = "/station", .method = HTTP_POST, .handler = station_post },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {

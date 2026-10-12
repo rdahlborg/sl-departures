@@ -51,12 +51,11 @@ Everything is done with the **BOOT** button. RESET just restarts the board.
 | Phone QR code | close | close | close |
 | Wi-Fi setup | | | cancel |
 
-The line list has the three lines followed by **Mobil…** (choose the station
-from a phone), **Wi-Fi…** (set up Wi-Fi from a phone) and **Om / Uppdatera…**
-(version, address and updates). The lists close by themselves after 30
+The line list has the three lines followed by **Mobil…** (station and Wi-Fi
+from a phone) and **Om / Uppdatera…** (version, address and updates). The lists close by themselves after 30
 seconds without a press.
 
-## Choosing the station from a phone
+## Settings from a phone
 
 ![QR code for the settings page](screenshots/phone-settings.png)
 
@@ -64,28 +63,42 @@ Pick **Mobil…** in the line list. The board shows a QR code for its settings
 page. Scan it with a phone on the same Wi-Fi and choose the line and station.
 The board switches at once and closes the code.
 
+The same page lists the saved Wi-Fi networks, with **Glöm** to forget one and
+**Lägg till nätverk** to add one. A network added here isn't tried right away,
+since that would take the board off the network the phone is on. The board
+switches to it when the current network is lost, and only then finds out
+whether the password is right.
+
+If the board has no Wi-Fi, **Mobil…** starts the setup hotspot instead (see
+below).
+
 The page is at `http://<board address>/`, and also at
 `http://sl-departures-xxxx.local/`, where `xxxx` matches the setup hotspot's
 name. In the web installer, connecting to a board that has Wi-Fi offers
 **Visit device**, which opens the same page.
 
-Anyone on your network can open this page and change the station, but not the
-Wi-Fi.
+Anyone on your network can open this page, change the station, and add or
+forget Wi-Fi networks.
 
 ## Wi-Fi setup from a phone
 
 ![Wi-Fi setup screen](screenshots/wifi-setup.png)
 
-On first boot, or from **Wi-Fi…** in the line list, the board starts a hotspot
-and shows a QR code:
+On first boot, or from **Mobil…** when the board is offline, it starts a
+hotspot and shows a QR code:
 
 1. Scan the code with the phone camera to join the hotspot. Its password is
    random each time and is included in the code.
 2. A setup page opens. If it doesn't, the screen shows a second code for
    `http://192.168.4.1`. Pick your network, enter the password, and choose
    the line and station.
-3. The board shows whether it connected and closes the hotspot. A wrong
-   password leaves the previous network in place.
+3. The board shows whether it connected and closes the hotspot. A network
+   is only saved once the board has connected to it.
+
+The board remembers up to 5 networks, for example your home Wi-Fi and a phone
+hotspot. When it loses its connection it joins the strongest saved network in
+range, skipping for a while any network that keeps failing, such as one with a
+wrong password. Adding a sixth forgets the one used longest ago.
 
 If setup was opened from the menu and nobody joins, the hotspot closes after
 10 minutes.
