@@ -215,9 +215,11 @@ static void handle(event_t ev)
                 wifi_setup_start();
             }
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_LANG) {
-            /* Switch and show the list again, now in the other language. */
+            /* Switch and go back to the board, which shows the new language. */
+            esp_timer_stop(timeout_timer);
+            ui_picker_hide();
+            mode = MODE_BOARD;
             i18n_set(i18n_lang() == LANG_EN ? LANG_SV : LANG_EN);
-            show_line_picker();
         } else if (mode == MODE_PICK_LINE && pick_index == PICK_ABOUT) {
             esp_timer_stop(timeout_timer);
             ui_picker_hide();
