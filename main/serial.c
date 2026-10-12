@@ -10,6 +10,8 @@
 #include "controls.h"
 #include "improv.h"
 #include "screenshot.h"
+#include "ui.h"
+#include "esp_lvgl_port.h"
 #include "serial.h"
 
 static const char *TAG = "serial";
@@ -30,6 +32,14 @@ static void command(uint8_t c)
     }
     if (c == 'S') {
         screenshot_dump();
+    } else if (c == 'B' || c == 'T') {
+        /* B toggles the boot screen demo, T steps its train. */
+        static int frame = -1;
+        frame = c == 'T' ? frame + 1 : frame < 0 ? 0 : -1;
+        if (lvgl_port_lock(1000)) {
+            ui_boot_demo(frame);
+            lvgl_port_unlock();
+        }
     } else if (c == 'W') {
         static board_ap_t aps[20];
         int n = board_wifi_scan(aps, 20);

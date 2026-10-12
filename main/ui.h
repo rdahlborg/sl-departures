@@ -21,3 +21,9 @@ bool ui_phone_visible(void);
 void ui_about_show(void);
 void ui_about_hide(void);
 bool ui_about_visible(void);
+
+/* Debug, for recording the docs' animations: show the boot screen with the
+ * train still at the given frame of a run of UI_TRAIN_FRAMES (frame
+ * UI_TRAIN_FRAMES is the pause between runs). Negative closes it. */
+#define UI_TRAIN_FRAMES 20
+void ui_boot_demo(int frame);

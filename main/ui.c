@@ -587,6 +587,7 @@ bool ui_phone_visible(void)
 #define TRAIN_FADE  150     /* of 1000: fade in and out at the ends */
 
 static lv_obj_t *boot_train;
+static bool boot_demo;
 
 static void train_step(void *obj, int32_t v)
 {
@@ -637,7 +638,7 @@ static void build_boot(lv_obj_t *scr)
 /* Stays up until the first departures are in, or until BOOT_MAX_MS. */
 static void update_boot(bool have_data)
 {
-    if (lv_obj_is_hidden(boot_panel)) {
+    if (lv_obj_is_hidden(boot_panel) || boot_demo) {
         return;
     }
     uint32_t elapsed = lv_tick_elaps(boot_started);
@@ -655,6 +656,26 @@ static void update_boot(bool have_data)
                 sizeof(buf));
     }
     lv_label_set_text(boot_status, buf);
+}
+
+void ui_boot_demo(int frame)
+{
+    if (frame < 0) {
+        boot_demo = false;
+        lv_obj_set_hidden(boot_panel, true);
+        return;
+    }
+    boot_demo = true;
+    lv_anim_delete(boot_train, train_step);
+    lv_obj_set_hidden(boot_panel, false);
+    lv_label_set_text(boot_status, "Hämtar avgångar…");
+    /* Same easing as the running animation; the last frame is the pause. */
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_values(&a, 0, 1000);
+    lv_anim_set_duration(&a, TRAIN_RUN_MS);
+    a.act_time = TRAIN_RUN_MS * (frame % (UI_TRAIN_FRAMES + 1)) / UI_TRAIN_FRAMES;
+    train_step(boot_train, a.act_time > TRAIN_RUN_MS ? 1000 : lv_anim_path_ease_in_out(&a));
 }
 
 /* ---- about and updates ---------------------------------------------- */
