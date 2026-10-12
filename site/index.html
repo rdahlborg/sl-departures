@@ -100,7 +100,7 @@
   <h1>SL Departures</h1>
   <p class="lede">Live Stockholm metro departures, and where the next trains are right now, on a small ESP32-C6 display.</p>
 
-  <img class="screen" src="brommaplan.png" alt="The display showing Brommaplan on the green line, with trains on a line map and the next departures in each direction" width="960" height="516">
+  <img class="screen" src="board.png" alt="The start screen with a small train running along the line colours, then the display showing Brommaplan on the green line, with trains on a line map and the next departures in each direction" width="960" height="516">
 
   <section class="install">
     <esp-web-install-button manifest="manifest.json">
@@ -108,7 +108,7 @@
       <span slot="unsupported">Installing needs Chrome or Edge on a computer. Your browser doesn't support Web Serial.</span>
       <span slot="not-allowed">Installing needs a secure (https) page.</span>
     </esp-web-install-button>
-    <p class="note">Connect the board with a USB-C data cable, click the button, and pick the port. Choose erase for a first install. After flashing, the installer asks for your Wi-Fi name and password, which are sent only to the board. Then <em>Visit device</em> opens the board's page for choosing the line and station. You can also close the Wi-Fi dialog and set up from your phone instead (below).</p>
+    <p class="note">Connect the board with a USB-C data cable, click the button, and pick the port. Choose erase for a first install. After flashing, the installer asks for your Wi-Fi name and password, which are sent only to the board. Then <em>Visit device</em> opens the board's page for choosing the line and station and managing its Wi-Fi networks. You can also close the Wi-Fi dialog and set up from your phone instead (below).</p>
   </section>
 
   <h2>What you need</h2>
@@ -134,22 +134,22 @@
       </tbody>
     </table>
   </div>
-  <p class="note">The line list has the three lines, then <em>Mobil…</em>, <em>Wi-Fi…</em> and <em>Om / Uppdatera…</em>. <strong>Mobil…</strong> shows a QR code: scan it with a phone on the same Wi-Fi to choose the line and station there.</p>
+  <p class="note">The line list has the three lines, then <em>Mobil…</em> and <em>Om / Uppdatera…</em>. <strong>Mobil…</strong> shows a QR code: scan it with a phone on the same Wi-Fi to choose the line and station, and to add or forget Wi-Fi networks. When the board is offline, <em>Mobil…</em> starts Wi-Fi setup instead (below).</p>
   <p class="note">The board remembers your station. The map shows four stations each side of yours. Trains are placed from SL's real-time departures at the neighbouring stations and glide along the track, in towards your station and on out the other side. An arrow and a trail mark a train on its way; a blinking outline marks one at the platform.</p>
 
   <div class="gallery">
-    <img src="slussen.png" alt="Slussen on the red line" width="960" height="516">
-    <img src="station-picker.png" alt="Choosing a station on the red line" width="960" height="516">
+    <img src="choose-station.png" alt="Choosing Slussen on the red line with the button" width="960" height="516">
+    <img src="phone-settings.png" alt="Opening Mobil… in the line list shows a QR code for the settings page" width="960" height="516">
   </div>
 
   <h2>Wi-Fi setup from your phone</h2>
-  <p>A new board shows a QR code by itself. To change networks later, hold the button, go to <em>Wi-Fi…</em> in the line list, and hold again.</p>
+  <p>A new board shows a QR code by itself. Later, when the board has no Wi-Fi, hold the button, go to <em>Mobil…</em> in the line list, and hold again.</p>
   <ol>
     <li>Scan the QR code with your phone camera to join the board's hotspot.</li>
     <li>A setup page opens. If it doesn't, scan the second code that appears on the screen.</li>
     <li>Pick your network, enter the password, and choose the line and station. The board shows when it's connected.</li>
   </ol>
-  <p class="note">If the new network doesn't work, the board keeps the old one. From a computer, you can also open this page, connect, and choose <em>Change Wi-Fi</em>.</p>
+  <p class="note">The board remembers up to five networks, for example your home Wi-Fi and a phone hotspot, and joins the strongest one in range. A network set up here is only saved once the board has connected to it. While the board is online, add more networks from <em>Mobil…</em>; they're used when the current network is lost. From a computer, you can also open this page, connect, and choose <em>Change Wi-Fi</em>.</p>
   <img class="screen" src="wifi-setup.png" alt="The Wi-Fi setup screen with a QR code" width="960" height="516">
 
   <h2>Updates</h2>
@@ -161,6 +161,7 @@
     <li><strong>Empty port list, or <em>Visit device</em> can't reach the board (Mac):</strong> allow Chrome under System Settings → Privacy &amp; Security → Local Network, then quit and reopen Chrome.</li>
     <li><strong>Port busy:</strong> close other installer tabs, or unplug and replug the board.</li>
     <li><strong>Dot next to the clock:</strong> red means no Wi-Fi, orange means the departure data is more than 90 seconds old.</li>
+    <li><strong>Start screen says <em>Ansluter till Wi-Fi…</em>:</strong> none of the saved networks is in range. With a phone hotspot, keep the hotspot settings screen open while the board connects, since phones stop showing an idle hotspot.</li>
   </ul>
 
   <footer>

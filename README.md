@@ -4,7 +4,7 @@ Live Stockholm metro departures and train positions on a
 [Waveshare ESP32-C6-LCD-1.47](https://www.waveshare.com/esp32-c6-lcd-1.47.htm).
 Made by Robert Dahlborg.
 
-![Brommaplan on the green line](screenshots/brommaplan.png)
+![The start screen with a train running along the line colours, then Brommaplan on the green line](screenshots/board.png)
 
 **Install from your browser:** https://rdahlborg.github.io/sl-departures
 
@@ -19,6 +19,7 @@ Made by Robert Dahlborg.
 - Choose line and station with the BOOT button or from your phone. Your choice
   is remembered.
 - Set up Wi-Fi from the web installer or from your phone with a QR code.
+  Remembers up to 5 networks and joins the strongest one in range.
 - Updates itself over Wi-Fi from the GitHub releases, with automatic rollback.
 - Fetches the station list from SL, so new stations show up by themselves.
 
@@ -35,8 +36,9 @@ Made by Robert Dahlborg.
    - **From your phone:** close the installer's Wi-Fi dialog. The board shows
      a QR code (see [Wi-Fi setup from a phone](#wi-fi-setup-from-a-phone)).
 
-On first start the board fetches the station list from SL, which takes about
-10 seconds once it is online. It starts on Brommaplan on the green line until
+The start screen stays up until the first departures are in, saying what it is
+waiting for. On first start the board fetches the station list from SL, which
+takes about 10 seconds once it is online. It starts on Brommaplan on the green line until
 you pick another station.
 
 ## Using the button
@@ -55,9 +57,11 @@ The line list has the three lines followed by **Mobil…** (station and Wi-Fi
 from a phone) and **Om / Uppdatera…** (version, address and updates). The lists close by themselves after 30
 seconds without a press.
 
+![Choosing Slussen on the red line with the button](screenshots/choose-station.png)
+
 ## Settings from a phone
 
-![QR code for the settings page](screenshots/phone-settings.png)
+![Opening Mobil… in the line list shows a QR code for the settings page](screenshots/phone-settings.png)
 
 Pick **Mobil…** in the line list. The board shows a QR code for its settings
 page. Scan it with a phone on the same Wi-Fi and choose the line and station.
@@ -130,6 +134,11 @@ get the flash layout that updates over Wi-Fi use.
   no Wi-Fi, orange means the departure data is more than 90 seconds old.
 - **The start screen stays on "Hämtar…":** the board needs internet access
   to fetch the station list the first time. It retries every 30 seconds.
+- **The start screen says "Ansluter till Wi-Fi…":** none of the saved networks
+  is in range or accepts its password. After 30 seconds the board shows the
+  departure screen with a red dot; open **Mobil…** to set up Wi-Fi from a
+  phone. With a phone hotspot, keep its settings screen open while the board
+  connects, since phones stop showing an idle hotspot.
 
 ## How trains are placed
 
@@ -201,13 +210,22 @@ installer page shows the new version.
 | `main/ota.c` | Updates over Wi-Fi, rollback check |
 | `main/fonts/` | Montserrat with Swedish letters (generated) |
 | `components/dns_server` | Captive portal DNS, from the ESP-IDF examples (CC0) |
-| `tools/` | Font generator, screenshot grabber |
+| `tools/` | Font generator, screenshot grabber, docs animations |
 | `site/` | Web installer page |
 
 ### Debugging over USB serial
 
 `python tools/screenshot.py PORT out.png` saves the screen as a PNG. Sending
-`n`, `p` or `h` simulates a press, double press or hold of the button.
+`n`, `p` or `h` simulates a press, double press or hold of the button. `W`
+logs a Wi-Fi scan, and the log shows why a connection dropped (reason 201
+means the network wasn't found).
+
+`python tools/animate.py PORT [board|phone|station]` records the animations in
+`screenshots/` by driving the board with those keys. It also uses `B`, which
+shows the start screen, and `T`, which steps its train one frame. Start with
+the board online on Brommaplan; the station scene leaves it on Slussen. The
+Wi-Fi setup screen is a still screenshot, since it only shows while the board
+is offline.
 
 ### Regenerating fonts
 
